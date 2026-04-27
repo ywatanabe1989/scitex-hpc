@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitex-hpc"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generic SLURM dispatch (srun, sbatch, sync, poll, fetch) for the SciTeX ecosystem — login nodes never run compute"
 readme = "README.md"
 license = "AGPL-3.0-only"
 requires-python = ">=3.9"
 authors = [{name = "Yusuke Watanabe", email = "ywatanabe@scitex.ai"}]
-keywords = ["scitex", "hpc", "slurm", "srun", "sbatch", "spartan"]
+keywords = ["scitex", "hpc", "slurm", "srun", "sbatch"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
     "Topic :: System :: Clustering",
 ]
-dependencies = []
+dependencies = ["PyYAML>=5.1"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff"]

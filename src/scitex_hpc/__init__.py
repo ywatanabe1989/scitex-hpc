@@ -11,16 +11,17 @@ Public API:
         fetch_result,        # scp the full output of a sbatch job
     )
 
-Default config matches typical SciTeX use (Spartan / sapphire), but every
-field is overridable through the `JobConfig` dataclass and via environment
-variables prefixed `SCITEX_HPC_*`.
+No cluster names are baked in. Defaults resolve via cascade:
+explicit `JobConfig(...)` → `SCITEX_HPC_*` env vars →
+`~/.scitex/{hpc,dev}/config.yaml` (`hpc.defaults.*`) → cluster-agnostic
+fallbacks. Set your `host` / `partition` once in user config and forget.
 
 Login nodes never run compute — every command is wrapped in srun/sbatch.
 """
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from ._config import HPC_DEFAULTS, JobConfig
 from ._dispatch import sbatch, srun
