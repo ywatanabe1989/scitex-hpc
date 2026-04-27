@@ -5,6 +5,13 @@ from __future__ import annotations
 import pytest
 
 from scitex_hpc import HPC_DEFAULTS, JobConfig
+from scitex_hpc import _config as _hpc_config
+
+
+@pytest.fixture(autouse=True)
+def _isolate_user_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Don't read the developer's ~/.scitex/* config in unit tests."""
+    monkeypatch.setattr(_hpc_config, "_load_user_defaults", lambda: {})
 
 
 def test_jobconfig_resolve_uses_explicit_first(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -19,6 +26,17 @@ def test_jobconfig_resolve_uses_env_when_no_explicit(
     monkeypatch.setenv("SCITEX_HPC_PARTITION", "from-env")
     cfg = JobConfig(project="x")
     assert cfg.resolve("partition") == "from-env"
+
+
+def test_jobconfig_resolve_uses_user_config_above_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SCITEX_HPC_PARTITION", raising=False)
+    monkeypatch.setattr(
+        _hpc_config, "_load_user_defaults", lambda: {"partition": "from-user-cfg"}
+    )
+    cfg = JobConfig(project="x")
+    assert cfg.resolve("partition") == "from-user-cfg"
 
 
 def test_jobconfig_resolve_falls_back_to_default(

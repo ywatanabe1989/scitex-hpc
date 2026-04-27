@@ -38,15 +38,25 @@ _USER_CONFIG_CANDIDATES = (
 )
 
 
-def _load_user_defaults() -> dict[str, Any]:
-    """Read ``hpc.defaults.*`` from the first existing user config file.
+_KEY_ALIASES = {"cpus_per_task": "cpus"}  # tolerate legacy SLURM-style key
 
-    Returns an empty dict if no config is found or yaml is unavailable.
+
+def _load_user_defaults() -> dict[str, Any]:
+    """Merge defaults from user config files.
+
+    Recognised layouts (first non-empty wins per key):
+
+    - ``~/.scitex/hpc/config.yaml`` flat top-level (``host: ...``, ``partition: ...``)
+    - ``~/.scitex/dev/config.yaml`` nested as ``hpc.defaults.<key>``
+
+    ``cpus_per_task`` is accepted as an alias for ``cpus``.
     """
     try:
         import yaml  # type: ignore
     except ImportError:
         return {}
+    merged: dict[str, Any] = {}
+    valid_keys = set(HPC_DEFAULTS) | set(_KEY_ALIASES)
     for path in _USER_CONFIG_CANDIDATES:
         if not path.exists():
             continue
@@ -54,11 +64,20 @@ def _load_user_defaults() -> dict[str, Any]:
             data = yaml.safe_load(path.read_text()) or {}
         except Exception:
             continue
-        hpc = data.get("hpc") or {}
-        defaults = hpc.get("defaults") or {}
-        if isinstance(defaults, dict):
-            return defaults
-    return {}
+        if not isinstance(data, dict):
+            continue
+        candidates: list[dict] = []
+        nested = (data.get("hpc") or {}).get("defaults") or {}
+        if isinstance(nested, dict):
+            candidates.append(nested)
+        flat = {k: v for k, v in data.items() if k in valid_keys}
+        if flat:
+            candidates.append(flat)
+        for src in candidates:
+            for k, v in src.items():
+                key = _KEY_ALIASES.get(k, k)
+                merged.setdefault(key, v)
+    return merged
 
 
 @dataclass
