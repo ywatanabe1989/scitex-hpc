@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitex-hpc"
-version = "0.2.0"
+version = "0.3.0"
 description = "Generic SLURM dispatch (srun, sbatch, sync, poll, fetch) for the SciTeX ecosystem — login nodes never run compute"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -36,6 +36,9 @@ all = ["scitex-hpc[dev,docs]"]
 Homepage = "https://github.com/ywatanabe1989/scitex-hpc"
 Repository = "https://github.com/ywatanabe1989/scitex-hpc"
 Documentation = "https://scitex-hpc.readthedocs.io"
+
+[project.scripts]
+scitex-hpc = "scitex_hpc._cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
