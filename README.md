@@ -47,6 +47,53 @@ print(poll_job(cfg, job_id))   # {'state': 'COMPLETED', 'exit_code': '0:0', 'ela
 fetch_result(cfg, job_id)      # downloads the .out file
 ```
 
+## Reservations (book once, exec many)
+
+For workflows where queue wait dominates iteration time — multi-agent
+fleets, distributed test runners, jupyter-on-HPC — book a node *once*
+and run many short commands inside its allocation:
+
+```python
+from scitex_hpc import JobConfig, Reservation
+
+# Book a 7-day allocation
+res = Reservation.book(
+    JobConfig(
+        project="dev-pool",
+        host="spartan",
+        partition="cascade",
+        cpus=8, mem="32G", time="7-0",
+    ),
+    persistent=True,        # walltime auto-resubmit (Phase 2)
+)
+
+# Run many commands inside the SAME allocation — no queue wait
+res.exec("hostname")                          # → "spartan-bm022.hpc..."
+res.exec(["python", "-m", "unittest", "discover"])
+res.exec("tmux new -d -s helper claude --dangerously-skip-permissions")
+
+# Open an interactive shell on the compute node
+res.attach(cmd="bash")
+
+# Or look up later by friendly name (state lives in ~/.scitex/hpc/leases/)
+res = Reservation.get("dev-pool")
+res.release()                                 # scancel + clear state
+```
+
+Equivalent CLI:
+
+```bash
+scitex-hpc reservations book dev-pool --host spartan --cpus 8 --mem 32G --time 7-0 --persistent
+scitex-hpc reservations list
+scitex-hpc reservations exec dev-pool 'hostname'
+scitex-hpc reservations attach dev-pool
+scitex-hpc reservations release dev-pool
+```
+
+**Compatible with bastion-only HPC policies.** No daemons, no tunnels,
+no `crontab @reboot`. Every `exec()` is a fresh ssh round-trip. SSH
+ControlMaster pooling on the calling host amortizes the handshake cost.
+
 ## Defaults & overrides
 
 Every `JobConfig` field has a `SCITEX_HPC_*` env-var override:

@@ -21,16 +21,18 @@ Login nodes never run compute — every command is wrapped in srun/sbatch.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from ._config import HPC_DEFAULTS, JobConfig
 from ._dispatch import sbatch, srun
+from ._reservation import Reservation
 from ._results import fetch_result, poll_job
 from ._sync import sync
 
 __all__ = [
     "HPC_DEFAULTS",
     "JobConfig",
+    "Reservation",
     "fetch_result",
     "poll_job",
     "sbatch",
