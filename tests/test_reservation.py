@@ -280,6 +280,204 @@ class TestBook:
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 — walltime auto-resubmit
+# ---------------------------------------------------------------------------
+
+
+class TestPersistentBook:
+    """Verify ``persistent=True`` injects the SIGUSR1 trap + signal directive."""
+
+    def test_persistent_adds_signal_directive(self, lease_dir, monkeypatch):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg, persistent=True)
+
+        # The sbatch invocation must include the walltime signal directive
+        sbatch_call = captured[0]
+        assert "--signal=B:USR1@3600" in sbatch_call
+
+    def test_persistent_injects_usr1_trap_into_body(self, lease_dir, monkeypatch):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg, persistent=True, hold_body="echo hi && tail -f /dev/null")
+
+        sbatch_call = captured[0]
+        # Trap must call sbatch with $0 to resubmit in place
+        assert "trap _scitex_hpc_walltime_resubmit USR1" in sbatch_call
+        assert 'sbatch "$0"' in sbatch_call
+        # Original hold body must still be present after the trap
+        assert "echo hi" in sbatch_call
+
+    def test_non_persistent_omits_trap_and_signal(self, lease_dir, monkeypatch):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg, persistent=False)
+
+        sbatch_call = captured[0]
+        assert "--signal=" not in sbatch_call
+        assert "trap _scitex_hpc_walltime_resubmit" not in sbatch_call
+
+    def test_persistent_flag_persists_to_state_file(self, lease_dir, monkeypatch):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+
+        def fake_run(*args, **kwargs):
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        res = Reservation.book(cfg, persistent=True)
+        loaded = Reservation.get(res.id)
+        assert loaded is not None
+        assert loaded.persistent is True
+
+
+class TestRefresh:
+    """Verify ``refresh()`` re-discovers job_id after a walltime resubmit."""
+
+    def test_refresh_picks_up_new_jobid_after_resubmit(self, lease_dir, monkeypatch):
+        # Original job 100 was submitted; SLURM auto-resubmitted to 101.
+        # Squeue --user --name returns both during the overlap window.
+        res = Reservation(
+            id="spartan-foo",
+            name="foo",
+            host="spartan",
+            job_id="100",
+            node="bm022",
+            persistent=True,
+        )
+        res.save()
+
+        def fake_run(*args, **kwargs):
+            return _proc(stdout="100 COMPLETING bm022\n101 RUNNING bm175\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        out = res.refresh()
+        # Newest jobid wins (101 > 100)
+        assert out.job_id == "101"
+        assert out.node == "bm175"
+        # State persisted
+        loaded = Reservation.get("spartan-foo")
+        assert loaded is not None and loaded.job_id == "101"
+
+    def test_refresh_clears_when_job_no_longer_in_queue(self, lease_dir, monkeypatch):
+        res = Reservation(
+            id="spartan-foo",
+            name="foo",
+            host="spartan",
+            job_id="42",
+            node="bm022",
+        )
+        res.save()
+        monkeypatch.setattr(resmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
+        out = res.refresh()
+        assert out.job_id == ""
+        assert out.node == ""
+
+    def test_refresh_uses_friendly_name_in_squeue_query(self, lease_dir, monkeypatch):
+        """squeue must filter by --name=<friendly>, not by --jobs=<id>."""
+        res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42")
+        res.save()
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            return _proc(stdout="42 RUNNING bm022\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        res.refresh()
+        cmd = captured[0]
+        # The remote command goes through ``bash -lc 'squeue …'`` so the
+        # inner ``--name='foo'`` gets the standard POSIX
+        # double-escape ('\''foo'\''). Assert the semantics without
+        # depending on shell-escape details.
+        assert "squeue" in cmd and "--user=$USER" in cmd
+        assert "--name=" in cmd and "foo" in cmd
+        assert "--jobs=" not in cmd
+
+    def test_refresh_no_save_when_save_false(self, lease_dir, monkeypatch):
+        res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="100")
+        res.save()
+        monkeypatch.setattr(
+            resmod.subprocess,
+            "run",
+            lambda *a, **k: _proc(stdout="200 RUNNING bm022\n"),
+        )
+        res.refresh(save=False)
+        # In-memory updated
+        assert res.job_id == "200"
+        # On-disk NOT updated
+        loaded = Reservation.get("spartan-foo")
+        assert loaded is not None and loaded.job_id == "100"
+
+    def test_refresh_skips_malformed_squeue_lines(self, lease_dir, monkeypatch):
+        res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42")
+        res.save()
+        # Mix of real rows and noise (e.g. squeue header glitches)
+        monkeypatch.setattr(
+            resmod.subprocess,
+            "run",
+            lambda *a, **k: _proc(stdout="garbage line\n42 RUNNING bm022\n"),
+        )
+        out = res.refresh()
+        assert out.job_id == "42"
+
+
+class TestWrapResubmitTrap:
+    def test_trap_function_uniquely_named(self):
+        wrapped = resmod._wrap_with_resubmit_trap("echo hi")
+        assert "_scitex_hpc_walltime_resubmit" in wrapped
+        assert "trap _scitex_hpc_walltime_resubmit USR1" in wrapped
+
+    def test_trap_calls_sbatch_with_self(self):
+        wrapped = resmod._wrap_with_resubmit_trap("echo hi")
+        assert 'sbatch "$0"' in wrapped
+
+    def test_original_body_preserved(self):
+        wrapped = resmod._wrap_with_resubmit_trap("do_setup\nclaude --skip\n")
+        # Original commands still reachable
+        assert "do_setup" in wrapped
+        assert "claude --skip" in wrapped
+        # Trap is installed BEFORE the body so the signal is caught
+        # while the body runs
+        body_idx = wrapped.index("do_setup")
+        trap_idx = wrapped.index("trap _scitex_hpc_walltime_resubmit USR1")
+        assert trap_idx < body_idx
+
+
+# ---------------------------------------------------------------------------
 # Exec
 # ---------------------------------------------------------------------------
 

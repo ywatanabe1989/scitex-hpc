@@ -64,7 +64,7 @@ res = Reservation.book(
         partition="cascade",
         cpus=8, mem="32G", time="7-0",
     ),
-    persistent=True,        # walltime auto-resubmit (Phase 2)
+    persistent=True,        # walltime auto-resubmit via SIGUSR1 trap
 )
 
 # Run many commands inside the SAME allocation — no queue wait
@@ -93,6 +93,25 @@ scitex-hpc reservations release dev-pool
 **Compatible with bastion-only HPC policies.** No daemons, no tunnels,
 no `crontab @reboot`. Every `exec()` is a fresh ssh round-trip. SSH
 ControlMaster pooling on the calling host amortizes the handshake cost.
+
+### Walltime auto-resubmit (`persistent=True`)
+
+When `persistent=True`, scitex-hpc:
+
+1. Adds `#SBATCH --signal=B:USR1@3600` so SLURM signals the script 1h before walltime.
+2. Wraps the sbatch script body with a SIGUSR1 trap that calls `sbatch "$0"` to resubmit itself.
+3. The friendly name (`dev-pool`) stays stable across resubmits; the SLURM `job_id` changes.
+
+To pick up the new `job_id` after a resubmit:
+
+```python
+res = Reservation.get("dev-pool")
+res.refresh()                                 # squeue --user --name=dev-pool
+res.exec("...")                               # uses the new job_id
+```
+
+This is SLURM's documented signaling mechanism — not a custom daemon.
+Compatible with HPC policies that ban persistent user-space daemons.
 
 ## Defaults & overrides
 
