@@ -46,6 +46,15 @@ _DEFAULT_POLL_INTERVAL = 2.0
 _DEFAULT_POLL_TIMEOUT = 300.0
 _DEFAULT_RELEASE_BACKOFF = 0.5
 
+# Walltime auto-resubmit (Phase 2). The trap fires N seconds before
+# walltime via ``#SBATCH --signal=B:USR1@<N>`` and resubmits the script
+# in place via ``sbatch "$0"``. SLURM's documented signaling mechanism —
+# not a custom daemon, so it's compatible with the 2026-04-26 IT Security
+# ruling on Spartan.
+_RESUBMIT_LEAD_SECONDS = 3600  # request signal 1h before walltime
+_RESUBMIT_SIGNAL = f"B:USR1@{_RESUBMIT_LEAD_SECONDS}"
+_USR1_TRAP_FUNC = "_scitex_hpc_walltime_resubmit"
+
 
 def _lease_dir() -> Path:
     """Return ``~/.scitex/hpc/leases/`` (override via ``SCITEX_HPC_LEASE_DIR``)."""
@@ -59,6 +68,28 @@ def _make_lease_id(host: str, name: str) -> str:
     """Lease id is ``<host>-<name>``. Names must be filesystem-safe."""
     safe = re.sub(r"[^A-Za-z0-9._-]", "-", name)
     return f"{host}-{safe}"
+
+
+def _wrap_with_resubmit_trap(hold_body: str) -> str:
+    """Wrap a sbatch script body with the SIGUSR1 walltime auto-resubmit trap.
+
+    The trap calls ``sbatch "$0"`` to resubmit the script in place.
+    SLURM signals USR1 at ``--signal=B:USR1@<N>`` so the trap fires N
+    seconds before walltime expires; the new job lands in the queue
+    while the old one is still running, so the allocation is effectively
+    permanent (modulo cluster-side intervention).
+
+    The trap function is named uniquely to avoid colliding with anything
+    the user's hold body might define.
+    """
+    trap = (
+        f"{_USR1_TRAP_FUNC}() {{\n"
+        f'  echo "[scitex-hpc] walltime approaching; resubmitting via sbatch $0" >&2\n'
+        f'  sbatch "$0"\n'
+        f"}}\n"
+        f"trap {_USR1_TRAP_FUNC} USR1\n"
+    )
+    return f"{trap}{hold_body}"
 
 
 @dataclass
@@ -164,9 +195,13 @@ class Reservation:
         when a consumer (e.g. scitex-agent-container) needs to set up tmux,
         traps, etc. on the compute node before the hold.
 
-        ``persistent=True`` is a phase-2 marker — it's saved to the state
-        file and the auto-resubmit USR1 trap will be added in a follow-up.
-        For phase 1, the flag is recorded but does not yet emit the trap.
+        ``persistent=True`` enables walltime auto-resubmit: the sbatch
+        wrapper installs a SIGUSR1 trap that calls ``sbatch "$0"`` shortly
+        before walltime expires (via ``#SBATCH --signal=B:USR1@3600``).
+        The lease keeps its friendly name across resubmits; the SLURM
+        ``job_id`` changes, so use ``Reservation.refresh()`` to update
+        the cached job_id before ``exec()`` / ``attach()`` calls that
+        cross a resubmit boundary.
         """
         host = config.resolve("host")
         if not host:
@@ -184,7 +219,13 @@ class Reservation:
             )
 
         body = hold_body if hold_body is not None else _DEFAULT_HOLD_BODY
+        if persistent:
+            body = _wrap_with_resubmit_trap(body)
         sbatch_args = [*config.slurm_args(), *config.extra_sbatch_args]
+        if persistent:
+            # SLURM sends SIGUSR1 to the batch script N seconds before walltime;
+            # the trap wired into ``body`` resubmits ``$0``.
+            sbatch_args.append(f"--signal={_RESUBMIT_SIGNAL}")
         script_body = (
             "#!/bin/bash\n#SBATCH " + "\n#SBATCH ".join(sbatch_args) + f"\n{body}\n"
         )
@@ -266,6 +307,60 @@ class Reservation:
         state = parts[0]
         node = parts[1] if len(parts) > 1 else ""
         return state, node
+
+    # ------------------------------------------------------------------
+    # Refresh (Phase 2: walltime auto-resubmit)
+    # ------------------------------------------------------------------
+
+    def refresh(self, *, save: bool = True) -> "Reservation":
+        """Re-discover the current ``job_id`` and ``node`` via squeue.
+
+        Persistent reservations resubmit themselves shortly before walltime
+        via the SIGUSR1 trap, so the SLURM ``job_id`` changes periodically.
+        Friendly name (and lease id) stays stable. ``refresh()`` queries
+        ``squeue --user=$USER --name=<friendly-name>`` and updates the
+        cached job_id / node in place.
+
+        Returns ``self`` for chaining; if ``save=True`` (default) the new
+        state is persisted to the lease file.
+
+        Behavior in edge cases:
+        - No matching job in queue → fields cleared (job_id="", node="")
+        - Multiple matching jobs (resubmit overlap window) → picks the
+          newest jobid, since the older one is about to exit
+        """
+        inner = (
+            f"squeue --user=$USER --name={_quote(self.name)} "
+            "--noheader --format='%i %T %N' 2>/dev/null"
+        )
+        result = subprocess.run(
+            ["ssh", self.host, _wrap_in_login_shell(inner)],
+            capture_output=True,
+            text=True,
+        )
+        rows: list[tuple[int, str, str]] = []
+        for line in (result.stdout or "").splitlines():
+            parts = line.strip().split(None, 2)
+            if len(parts) < 2 or not parts[0].isdigit():
+                continue
+            jobid_int = int(parts[0])
+            state = parts[1]
+            node = parts[2] if len(parts) > 2 else ""
+            rows.append((jobid_int, state, node))
+        if not rows:
+            self.job_id = ""
+            self.node = ""
+        else:
+            # Newest jobid wins — the resubmit-overlap window has the
+            # outgoing (older) job and the incoming (newer) one; we want
+            # the one that will keep running.
+            rows.sort(key=lambda t: t[0], reverse=True)
+            best = rows[0]
+            self.job_id = str(best[0])
+            self.node = best[2]
+        if save and self.job_id:
+            self.save()
+        return self
 
     # ------------------------------------------------------------------
     # Exec / attach
