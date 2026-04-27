@@ -175,6 +175,70 @@ class Reservation:
         return out
 
     # ------------------------------------------------------------------
+    # Adoption (Phase 3 enabler)
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_jobid(
+        cls,
+        *,
+        host: str,
+        job_id: str,
+        name: str,
+        persistent: bool = False,
+        save: bool = True,
+        refresh_node: bool = True,
+    ) -> "Reservation":
+        """Adopt an *already-submitted* SLURM job into a Reservation.
+
+        Use case: consumers (e.g. scitex-agent-container's SlurmRuntime)
+        that build their own sbatch scripts with custom hardeners can
+        still surface as Reservations after submission. They run their
+        own ``sbatch …`` to get the job_id, then call ``from_jobid(...)``
+        to write the lease file and gain the Reservation API surface
+        (exec, attach, refresh, release, list).
+
+        Refuses to overwrite an existing lease (use ``release()`` first
+        if you want to re-adopt a different job under the same name).
+
+        If ``refresh_node=True`` (default), polls squeue once to populate
+        the ``node`` field. Pass False to skip the network round-trip
+        when the caller already knows the node.
+        """
+        if not host:
+            raise ValueError("from_jobid requires non-empty host")
+        if not str(job_id).strip():
+            raise ValueError("from_jobid requires non-empty job_id")
+        clean_name = (name or "").strip()
+        if not clean_name:
+            raise ValueError("from_jobid requires non-empty name")
+        lease_id = _make_lease_id(host, clean_name)
+
+        existing = cls.get(lease_id)
+        if existing is not None:
+            raise FileExistsError(
+                f"reservation {lease_id} already exists; release it first"
+            )
+
+        res = cls(
+            id=lease_id,
+            name=clean_name,
+            host=host,
+            job_id=str(job_id),
+            submitted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            persistent=persistent,
+        )
+        if refresh_node:
+            try:
+                _, node = res._squeue_state()
+                res.node = node
+            except Exception:  # pragma: no cover — defensive
+                pass
+        if save:
+            res.save()
+        return res
+
+    # ------------------------------------------------------------------
     # Booking
     # ------------------------------------------------------------------
 

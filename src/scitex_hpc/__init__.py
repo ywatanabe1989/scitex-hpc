@@ -21,7 +21,7 @@ Login nodes never run compute — every command is wrapped in srun/sbatch.
 
 from __future__ import annotations
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from ._config import HPC_DEFAULTS, JobConfig
 from ._dispatch import sbatch, srun
