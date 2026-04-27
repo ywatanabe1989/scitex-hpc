@@ -627,3 +627,84 @@ class TestLeaseId:
         assert (
             resmod._make_lease_id("spartan", "dev_pool.v2-3") == "spartan-dev_pool.v2-3"
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 enabler — Reservation.from_jobid
+# ---------------------------------------------------------------------------
+
+
+class TestFromJobid:
+    """Adopt an already-submitted SLURM job into a Reservation."""
+
+    def test_from_jobid_creates_lease_with_no_squeue_when_refresh_off(
+        self, lease_dir, monkeypatch
+    ):
+        """``refresh_node=False`` skips the squeue probe."""
+        called = []
+        monkeypatch.setattr(
+            resmod.subprocess, "run",
+            lambda *a, **k: called.append(a) or _proc(stdout=""),
+        )
+        res = Reservation.from_jobid(
+            host="spartan", job_id="42", name="my-pool", refresh_node=False
+        )
+        assert res.id == "spartan-my-pool"
+        assert res.job_id == "42"
+        assert res.host == "spartan"
+        assert res.node == ""
+        assert called == []
+
+    def test_from_jobid_refreshes_node_by_default(
+        self, lease_dir, monkeypatch
+    ):
+        monkeypatch.setattr(
+            resmod.subprocess, "run",
+            lambda *a, **k: _proc(stdout="RUNNING bm022\n"),
+        )
+        res = Reservation.from_jobid(
+            host="spartan", job_id="42", name="my-pool"
+        )
+        assert res.node == "bm022"
+
+    def test_from_jobid_persists_to_state_file(self, lease_dir, monkeypatch):
+        monkeypatch.setattr(
+            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
+        )
+        Reservation.from_jobid(
+            host="spartan", job_id="42", name="my-pool", refresh_node=False
+        )
+        on_disk = (lease_dir / "spartan-my-pool.json").read_text()
+        assert "\"job_id\": \"42\"" in on_disk
+
+    def test_from_jobid_save_false_skips_disk_write(
+        self, lease_dir, monkeypatch
+    ):
+        monkeypatch.setattr(
+            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
+        )
+        Reservation.from_jobid(
+            host="spartan", job_id="42", name="my-pool",
+            refresh_node=False, save=False,
+        )
+        assert not (lease_dir / "spartan-my-pool.json").exists()
+
+    def test_from_jobid_refuses_overwrite(self, lease_dir, monkeypatch):
+        monkeypatch.setattr(
+            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
+        )
+        Reservation.from_jobid(
+            host="spartan", job_id="42", name="foo", refresh_node=False
+        )
+        with pytest.raises(FileExistsError, match="already exists"):
+            Reservation.from_jobid(
+                host="spartan", job_id="99", name="foo", refresh_node=False
+            )
+
+    def test_from_jobid_validates_inputs(self, lease_dir):
+        with pytest.raises(ValueError, match="host"):
+            Reservation.from_jobid(host="", job_id="1", name="x")
+        with pytest.raises(ValueError, match="job_id"):
+            Reservation.from_jobid(host="spartan", job_id="", name="x")
+        with pytest.raises(ValueError, match="name"):
+            Reservation.from_jobid(host="spartan", job_id="1", name="")
