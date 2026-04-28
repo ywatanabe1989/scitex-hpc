@@ -38,6 +38,7 @@ def _book(args: argparse.Namespace) -> int:
         cfg,
         persistent=args.persistent,
         hold_body=args.hold_body,
+        tmux_server=args.tmux_server,
         poll_timeout=args.poll_timeout,
         poll_interval=args.poll_interval,
     )
@@ -137,6 +138,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--hold-body",
         default=None,
         help="Custom sbatch script body (default: tail -f /dev/null)",
+    )
+    pb.add_argument(
+        "--tmux-server",
+        default=None,
+        metavar="SOCKET",
+        help=(
+            "Bootstrap a long-lived tmux server with this socket name as "
+            "the job's PID 1. Required for scitex-agent-container's "
+            "slurm-tenant runtime (Phase 4). Example: --tmux-server sac"
+        ),
     )
     pb.add_argument("--poll-timeout", type=float, default=300.0)
     pb.add_argument("--poll-interval", type=float, default=2.0)
