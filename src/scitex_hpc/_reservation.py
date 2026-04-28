@@ -114,6 +114,38 @@ def _parse_squeue_state_node(stdout: str) -> tuple[str, str]:
     return ("", "")
 
 
+def _tmux_server_bootstrap(socket: str) -> str:
+    """Generate a hold-body fragment that starts a long-lived tmux server.
+
+    The fragment must be prepended to whatever hold body keeps the job alive
+    (typically ``tail -f /dev/null``). Example assembled body::
+
+        tmux -L sac new-session -d -s _root 'sleep infinity'
+        tail -f /dev/null
+
+    Why this is necessary for multi-tenant agents (Phase 4 of #1):
+
+    SLURM kills *all processes in a step's cgroup* when the step ends.
+    A tmux daemon spawned by ``srun --jobid --overlap`` therefore dies
+    immediately — verified live on spartan-bm021 2026-04-28.
+
+    But a tmux server started by the **sbatch script itself** (the job's
+    main process) lives in the job's cgroup, not a transient step's
+    cgroup. It survives as long as the script's tail/sleep keeps the job
+    alive. Tenants can then ``tmux -L <socket> new-session -t _root ...``
+    against the same socket and their sessions survive too.
+
+    The socket name is per-job, so multiple reservations on the same
+    compute node can coexist with different sockets.
+    """
+    safe_socket = re.sub(r"[^A-Za-z0-9._-]", "-", socket)
+    return (
+        f"# scitex-hpc tmux server bootstrap (Phase 4 multi-tenant support)\n"
+        f"tmux -L {safe_socket} new-session -d -s _root "
+        f"'sleep infinity' 2>/dev/null || true\n"
+    )
+
+
 def _wrap_with_resubmit_trap(hold_body: str) -> str:
     """Wrap a sbatch script body with the SIGUSR1 walltime auto-resubmit trap.
 
@@ -293,6 +325,7 @@ class Reservation:
         *,
         persistent: bool = False,
         hold_body: str | None = None,
+        tmux_server: str | None = None,
         poll_interval: float = _DEFAULT_POLL_INTERVAL,
         poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
     ) -> "Reservation":
@@ -310,6 +343,17 @@ class Reservation:
         ``job_id`` changes, so use ``Reservation.refresh()`` to update
         the cached job_id before ``exec()`` / ``attach()`` calls that
         cross a resubmit boundary.
+
+        ``tmux_server`` (Phase 4): if set to a socket name (e.g. ``"sac"``),
+        the sbatch script bootstraps a tmux server via
+        ``tmux -L <name> new-session -d -s _root 'sleep infinity'`` BEFORE
+        the hold body runs. This makes the tmux server a child of the
+        sbatch script (the job's main process), so it lives in the job's
+        cgroup — surviving past any ``srun --jobid --overlap`` step that
+        would otherwise terminate it. Tenants then attach via
+        ``tmux -L <name> ...`` and their sessions outlive their setup
+        commands. The socket name is stored in the Reservation as
+        ``extras["tmux_server"]`` so consumers can rediscover it.
         """
         host = config.resolve("host")
         if not host:
@@ -327,6 +371,8 @@ class Reservation:
             )
 
         body = hold_body if hold_body is not None else _DEFAULT_HOLD_BODY
+        if tmux_server:
+            body = _tmux_server_bootstrap(tmux_server) + body
         if persistent:
             body = _wrap_with_resubmit_trap(body)
         sbatch_args = [*config.slurm_args(), *config.extra_sbatch_args]
@@ -352,6 +398,9 @@ class Reservation:
             )
         job_id = m.group(1)
 
+        extras: dict[str, Any] = {}
+        if tmux_server:
+            extras["tmux_server"] = tmux_server
         res = cls(
             id=lease_id,
             name=name,
@@ -359,6 +408,7 @@ class Reservation:
             job_id=job_id,
             submitted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             persistent=persistent,
+            extras=extras,
         )
         # Defer save() until allocation is confirmed. If the job times out
         # or fails, scancel and leave no orphan state file. (Leaking SLURM
