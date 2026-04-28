@@ -88,6 +88,30 @@ def _attach(args: argparse.Namespace) -> int:
     return res.attach(cmd=args.shell, pty=True)
 
 
+def _refresh(args: argparse.Namespace) -> int:
+    """Re-discover the current job_id via squeue --user --name=<friendly>.
+
+    Useful after a walltime auto-resubmit (persistent=True): the SLURM
+    job_id changes but the friendly name stays stable. The cached
+    ``job_id`` in the lease file becomes stale until refreshed.
+    """
+    res = Reservation.require(args.name, host=args.host)
+    res.refresh()
+    if args.json:
+        print(json.dumps(_serialize(res), indent=2))
+    else:
+        if res.job_id:
+            print(f"refreshed: id={res.id} job={res.job_id} node={res.node}")
+        else:
+            print(
+                f"refreshed: id={res.id} (no live job found via "
+                f"squeue --name={res.name})",
+                file=sys.stderr,
+            )
+            return 2
+    return 0
+
+
 def _release(args: argparse.Namespace) -> int:
     res = Reservation.get(args.name, host=args.host)
     if res is None:
@@ -171,6 +195,18 @@ def _build_parser() -> argparse.ArgumentParser:
     pe.add_argument("command")
     pe.add_argument("--host", default=None)
     pe.set_defaults(func=_exec)
+
+    # refresh
+    pr = res_sub.add_parser(
+        "refresh",
+        help=(
+            "Re-discover the current job_id via squeue (after walltime auto-resubmit)"
+        ),
+    )
+    pr.add_argument("name")
+    pr.add_argument("--host", default=None)
+    pr.add_argument("--json", action="store_true")
+    pr.set_defaults(func=_refresh)
 
     # attach
     pa = res_sub.add_parser(

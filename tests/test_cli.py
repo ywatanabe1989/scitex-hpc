@@ -150,34 +150,101 @@ class TestBookTmuxServer:
         def fake_book(cfg, **kwargs):
             captured.append(kwargs)
             return Reservation(
-                id="spartan-test", name="test", host="spartan",
-                job_id="42", node="n1", extras=kwargs.get("extras", {}),
+                id="spartan-test",
+                name="test",
+                host="spartan",
+                job_id="42",
+                node="n1",
+                extras=kwargs.get("extras", {}),
             )
 
         # We mock the Reservation.book classmethod to capture kwargs
         from scitex_hpc._cli import Reservation as CliReservation
+
         monkeypatch.setattr(CliReservation, "book", fake_book)
-        rc = main([
-            "reservations", "book", "test",
-            "--host", "spartan",
-            "--tmux-server", "sac",
-        ])
+        rc = main(
+            [
+                "reservations",
+                "book",
+                "test",
+                "--host",
+                "spartan",
+                "--tmux-server",
+                "sac",
+            ]
+        )
         assert rc == 0
         assert captured[0].get("tmux_server") == "sac"
 
-    def test_book_without_tmux_server_passes_none(
-        self, lease_dir, monkeypatch
-    ):
+    def test_book_without_tmux_server_passes_none(self, lease_dir, monkeypatch):
         captured: list[dict] = []
 
         def fake_book(cfg, **kwargs):
             captured.append(kwargs)
             return Reservation(
-                id="spartan-test", name="test", host="spartan",
-                job_id="42", node="n1",
+                id="spartan-test",
+                name="test",
+                host="spartan",
+                job_id="42",
+                node="n1",
             )
 
         from scitex_hpc._cli import Reservation as CliReservation
+
         monkeypatch.setattr(CliReservation, "book", fake_book)
         main(["reservations", "book", "test", "--host", "spartan"])
         assert captured[0].get("tmux_server") is None
+
+
+class TestRefresh:
+    """`reservations refresh` re-discovers job_id by friendly name."""
+
+    def test_refresh_picks_up_new_jobid(self, lease_dir, monkeypatch, capsys):
+        # Pre-seed: lease records old job_id
+        Reservation(
+            id="spartan-foo",
+            name="foo",
+            host="spartan",
+            job_id="100",
+            node="bm022",
+        ).save()
+        # squeue returns NEW job (post-resubmit)
+        monkeypatch.setattr(
+            resmod.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="200 RUNNING bm175\n",
+                stderr="",
+            ),
+        )
+        rc = main(["reservations", "refresh", "spartan-foo", "--json"])
+        assert rc == 0
+        out = json.loads(capsys.readouterr().out)
+        assert out["job_id"] == "200"
+        assert out["node"] == "bm175"
+
+    def test_refresh_returns_2_when_no_live_job(self, lease_dir, monkeypatch, capsys):
+        Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42").save()
+        monkeypatch.setattr(
+            resmod.subprocess,
+            "run",
+            lambda *a, **k: subprocess.CompletedProcess(
+                args=[],
+                returncode=0,
+                stdout="",
+                stderr="",
+            ),
+        )
+        rc = main(["reservations", "refresh", "spartan-foo"])
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "no live job found" in captured.err
+
+    def test_refresh_missing_lease_raises_keyerror(self, lease_dir):
+        # require() raises KeyError when the lease isn't found.
+        # This bubbles up from main(); consistent with `exec` and `attach`
+        # which also use require() for the same reason.
+        with pytest.raises(KeyError, match="no reservation"):
+            main(["reservations", "refresh", "nonexistent"])
