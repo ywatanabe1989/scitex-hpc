@@ -782,3 +782,115 @@ class TestSqueueParserNoiseTolerance:
         state, node = res._squeue_state()
         assert state == "RUNNING"
         assert node == "spartan-bm023"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 enabler — tmux server bootstrap
+# ---------------------------------------------------------------------------
+
+
+class TestTmuxServerBootstrap:
+    """``tmux_server`` makes the sbatch job run a long-lived tmux server
+    as PID 1, so tenants attaching via ``srun --jobid --overlap`` don't
+    get cgroup-killed when their step ends.
+
+    Architectural fix for the 2026-04-28 finding documented in
+    feature/slurm-tenant-prototype branch on scitex-agent-container."""
+
+    def test_bootstrap_fragment_uses_named_socket(self):
+        body = resmod._tmux_server_bootstrap("sac")
+        assert "tmux -L sac new-session -d -s _root" in body
+        assert "sleep infinity" in body
+
+    def test_bootstrap_fragment_sanitizes_socket_name(self):
+        # Filesystem-safe socket name; slashes/spaces become hyphens
+        body = resmod._tmux_server_bootstrap("a/b c")
+        assert "tmux -L a-b-c new-session" in body
+
+    def test_bootstrap_fragment_is_idempotent(self):
+        """``|| true`` so a re-run doesn't fail if the server is already up."""
+        assert "|| true" in resmod._tmux_server_bootstrap("sac")
+
+    def test_book_with_tmux_server_prepends_bootstrap(
+        self, lease_dir, monkeypatch
+    ):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg, tmux_server="sac")
+
+        sbatch_call = captured[0]
+        # tmux server bootstrap must run BEFORE the hold body
+        assert "tmux -L sac new-session" in sbatch_call
+        # And the default hold body still keeps the job alive
+        assert "tail -f /dev/null" in sbatch_call
+
+    def test_book_records_socket_name_in_extras(self, lease_dir, monkeypatch):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+
+        def fake_run(*args, **kwargs):
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        res = Reservation.book(cfg, tmux_server="sac")
+        assert res.extras.get("tmux_server") == "sac"
+        # Round-trips through state file
+        loaded = Reservation.get(res.id)
+        assert loaded is not None
+        assert loaded.extras.get("tmux_server") == "sac"
+
+    def test_book_without_tmux_server_omits_bootstrap(
+        self, lease_dir, monkeypatch
+    ):
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg)
+        sbatch_call = captured[0]
+        assert "tmux -L" not in sbatch_call
+        assert "new-session" not in sbatch_call
+
+    def test_book_combines_persistent_and_tmux_server(
+        self, lease_dir, monkeypatch
+    ):
+        """Both walltime auto-resubmit AND tmux bootstrap can coexist."""
+        cfg = JobConfig(project="dev-pool", host="spartan")
+        captured = []
+
+        def fake_run(*args, **kwargs):
+            captured.append(args[0][2])
+            cmd = args[0][2]
+            if "sbatch" in cmd:
+                return _proc(stdout="Submitted batch job 1\n")
+            return _proc(stdout="RUNNING node-x\n")
+
+        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
+        Reservation.book(cfg, persistent=True, tmux_server="sac")
+
+        sbatch_call = captured[0]
+        assert "trap _scitex_hpc_walltime_resubmit USR1" in sbatch_call
+        assert "tmux -L sac new-session" in sbatch_call
+        assert "--signal=B:USR1@3600" in sbatch_call
