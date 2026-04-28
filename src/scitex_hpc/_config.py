@@ -38,10 +38,9 @@ HPC_DEFAULTS: dict[str, Any] = {
 def _user_config_candidates() -> tuple[Path, ...]:
     """Candidate user-config paths, resolved at call time so $SCITEX_DIR
     relocates them per the local-state-directories spec §6."""
-    base = Path(os.environ.get("SCITEX_DIR", str(Path.home() / ".scitex")))
     return (
-        base / "hpc" / "config.yaml",
-        base / "dev" / "config.yaml",
+        local_state.path("hpc", "config.yaml"),
+        local_state.path("dev", "config.yaml"),
     )
 
 

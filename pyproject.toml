@@ -19,8 +19,10 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
     "Topic :: System :: Clustering",
 ]
-dependencies = ["PyYAML>=5.1"]
+dependencies = [
+    "PyYAML>=5.1",
     "scitex-config>=0.3.0",
+]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff"]
