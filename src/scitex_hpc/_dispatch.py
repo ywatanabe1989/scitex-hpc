@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import re
-import subprocess
+
+from scitex_ssh import exec_remote
 
 from ._config import JobConfig
 
@@ -41,8 +42,8 @@ def srun(config: JobConfig) -> int:
         f"bash -lc {_quote(config.command)}"
     )
 
-    ssh_cmd = ["ssh", host, _wrap_in_login_shell(inner)]
-    return subprocess.run(ssh_cmd).returncode
+    result = exec_remote(host, _wrap_in_login_shell(inner))
+    return result.returncode
 
 
 def sbatch(config: JobConfig) -> str | None:
@@ -68,7 +69,7 @@ def sbatch(config: JobConfig) -> str | None:
     # be cleaner but isn't portable across all login shells.
     script_body = (
         "#!/bin/bash\n"
-        f"#SBATCH " + "\n#SBATCH ".join(sbatch_args) + "\n"
+        "#SBATCH " + "\n#SBATCH ".join(sbatch_args) + "\n"
         f"cd {remote_base}/{config.project}\n"
         f"{config.command}\n"
     )
@@ -78,11 +79,7 @@ def sbatch(config: JobConfig) -> str | None:
         f"sbatch <(printf %s {_quote(script_body)})"
     )
 
-    result = subprocess.run(
-        ["ssh", host, _wrap_in_login_shell(inner)],
-        capture_output=True,
-        text=True,
-    )
+    result = exec_remote(host, _wrap_in_login_shell(inner))
     if result.returncode != 0:
         return None
     # ``sbatch`` prints "Submitted batch job <ID>" on success.

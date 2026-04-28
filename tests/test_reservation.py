@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from scitex_ssh import _primitives as sshmod
 
 from scitex_hpc import JobConfig, Reservation
 from scitex_hpc import _reservation as resmod
@@ -118,7 +119,7 @@ class TestBook:
                 _proc(stdout="RUNNING spartan-bm022.hpc\n"),  # squeue probe
             ]
         )
-        monkeypatch.setattr(resmod.subprocess, "run", run)
+        monkeypatch.setattr(sshmod.subprocess, "run", run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
 
         res = Reservation.book(cfg, persistent=True)
@@ -143,7 +144,7 @@ class TestBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
 
         Reservation.book(cfg)
@@ -154,7 +155,7 @@ class TestBook:
     def test_book_raises_on_sbatch_failure(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             _scripted_run([_proc(returncode=1, stderr="bad partition")]),
         )
@@ -164,7 +165,7 @@ class TestBook:
     def test_book_raises_when_jobid_unparseable(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             _scripted_run([_proc(stdout="weird output")]),
         )
@@ -212,7 +213,7 @@ class TestBook:
                 return _proc()
             return _proc()
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         clock = iter([0.0, 0.5, 1.5, 2.5, 3.5])
         monkeypatch.setattr(resmod.time, "monotonic", lambda: next(clock))
@@ -238,7 +239,7 @@ class TestBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
 
         Reservation.book(cfg, hold_body="echo bootstrapped && tail -f /dev/null")
@@ -252,7 +253,7 @@ class TestBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="PENDING \n")  # never allocates
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
 
         # Drive monotonic forward fast so timeout fires
@@ -265,7 +266,7 @@ class TestBook:
     def test_book_raises_if_job_ends_during_wait(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             _scripted_run(
                 [
@@ -298,7 +299,7 @@ class TestPersistentBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg, persistent=True)
 
@@ -317,7 +318,7 @@ class TestPersistentBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg, persistent=True, hold_body="echo hi && tail -f /dev/null")
 
@@ -339,7 +340,7 @@ class TestPersistentBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg, persistent=False)
 
@@ -356,7 +357,7 @@ class TestPersistentBook:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         res = Reservation.book(cfg, persistent=True)
         loaded = Reservation.get(res.id)
@@ -383,7 +384,7 @@ class TestRefresh:
         def fake_run(*args, **kwargs):
             return _proc(stdout="100 COMPLETING bm022\n101 RUNNING bm175\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         out = res.refresh()
         # Newest jobid wins (101 > 100)
         assert out.job_id == "101"
@@ -401,7 +402,7 @@ class TestRefresh:
             node="bm022",
         )
         res.save()
-        monkeypatch.setattr(resmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
+        monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
         out = res.refresh()
         assert out.job_id == ""
         assert out.node == ""
@@ -416,7 +417,7 @@ class TestRefresh:
             captured.append(args[0][2])
             return _proc(stdout="42 RUNNING bm022\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         res.refresh()
         cmd = captured[0]
         # The remote command goes through ``bash -lc 'squeue …'`` so the
@@ -431,7 +432,7 @@ class TestRefresh:
         res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="100")
         res.save()
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             lambda *a, **k: _proc(stdout="200 RUNNING bm022\n"),
         )
@@ -447,7 +448,7 @@ class TestRefresh:
         res.save()
         # Mix of real rows and noise (e.g. squeue header glitches)
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             lambda *a, **k: _proc(stdout="garbage line\n42 RUNNING bm022\n"),
         )
@@ -502,7 +503,7 @@ class TestExec:
             captured.append(args[0])
             return _proc(stdout="spartan-bm022.hpc\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         out = res.exec("hostname")
 
         assert out.stdout.startswith("spartan-bm022")
@@ -521,7 +522,7 @@ class TestExec:
             captured.append(args[0])
             return _proc()
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         res.exec(["python", "-c", "print('hi')"])
         # All argv tokens must be POSIX-quoted into the remote command
         assert "'python'" in captured[0][2]
@@ -530,7 +531,7 @@ class TestExec:
     def test_exec_returns_completedprocess(self, lease_dir, monkeypatch):
         res = self._make_running(lease_dir)
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             lambda *a, **k: _proc(returncode=7, stdout="x", stderr="y"),
         )
@@ -580,7 +581,7 @@ class TestRelease:
             captured.append(args[0])
             return _proc(returncode=0)
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         ok = res.release()
         assert ok is True
@@ -591,7 +592,7 @@ class TestRelease:
         res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42")
         # Don't save — state file doesn't exist
         monkeypatch.setattr(
-            resmod.subprocess, "run", lambda *a, **k: _proc(returncode=0)
+            sshmod.subprocess, "run", lambda *a, **k: _proc(returncode=0)
         )
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         # Must not raise
@@ -601,7 +602,7 @@ class TestRelease:
         res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42")
         res.save()
         monkeypatch.setattr(
-            resmod.subprocess,
+            sshmod.subprocess,
             "run",
             lambda *a, **k: _proc(returncode=1, stderr="invalid jobid"),
         )
@@ -643,7 +644,8 @@ class TestFromJobid:
         """``refresh_node=False`` skips the squeue probe."""
         called = []
         monkeypatch.setattr(
-            resmod.subprocess, "run",
+            sshmod.subprocess,
+            "run",
             lambda *a, **k: called.append(a) or _proc(stdout=""),
         )
         res = Reservation.from_jobid(
@@ -655,44 +657,36 @@ class TestFromJobid:
         assert res.node == ""
         assert called == []
 
-    def test_from_jobid_refreshes_node_by_default(
-        self, lease_dir, monkeypatch
-    ):
+    def test_from_jobid_refreshes_node_by_default(self, lease_dir, monkeypatch):
         monkeypatch.setattr(
-            resmod.subprocess, "run",
+            sshmod.subprocess,
+            "run",
             lambda *a, **k: _proc(stdout="RUNNING bm022\n"),
         )
-        res = Reservation.from_jobid(
-            host="spartan", job_id="42", name="my-pool"
-        )
+        res = Reservation.from_jobid(host="spartan", job_id="42", name="my-pool")
         assert res.node == "bm022"
 
     def test_from_jobid_persists_to_state_file(self, lease_dir, monkeypatch):
-        monkeypatch.setattr(
-            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
-        )
+        monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
         Reservation.from_jobid(
             host="spartan", job_id="42", name="my-pool", refresh_node=False
         )
         on_disk = (lease_dir / "spartan-my-pool.json").read_text()
-        assert "\"job_id\": \"42\"" in on_disk
+        assert '"job_id": "42"' in on_disk
 
-    def test_from_jobid_save_false_skips_disk_write(
-        self, lease_dir, monkeypatch
-    ):
-        monkeypatch.setattr(
-            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
-        )
+    def test_from_jobid_save_false_skips_disk_write(self, lease_dir, monkeypatch):
+        monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
         Reservation.from_jobid(
-            host="spartan", job_id="42", name="my-pool",
-            refresh_node=False, save=False,
+            host="spartan",
+            job_id="42",
+            name="my-pool",
+            refresh_node=False,
+            save=False,
         )
         assert not (lease_dir / "spartan-my-pool.json").exists()
 
     def test_from_jobid_refuses_overwrite(self, lease_dir, monkeypatch):
-        monkeypatch.setattr(
-            resmod.subprocess, "run", lambda *a, **k: _proc(stdout="")
-        )
+        monkeypatch.setattr(sshmod.subprocess, "run", lambda *a, **k: _proc(stdout=""))
         Reservation.from_jobid(
             host="spartan", job_id="42", name="foo", refresh_node=False
         )
@@ -721,7 +715,8 @@ class TestSqueueParserNoiseTolerance:
 
     def test_parses_clean_output(self):
         assert resmod._parse_squeue_state_node("RUNNING node-x\n") == (
-            "RUNNING", "node-x"
+            "RUNNING",
+            "node-x",
         )
 
     def test_skips_xauthority_display_banner(self):
@@ -737,14 +732,13 @@ class TestSqueueParserNoiseTolerance:
             "RUNNING spartan-bm023\n"
         )
         assert resmod._parse_squeue_state_node(spartan_output) == (
-            "RUNNING", "spartan-bm023"
+            "RUNNING",
+            "spartan-bm023",
         )
 
     def test_returns_empty_on_no_match(self):
         # Banner only, no squeue row (job not found)
-        assert resmod._parse_squeue_state_node("DISPLAY: x\nXAUTHORITY:\n") == (
-            "", ""
-        )
+        assert resmod._parse_squeue_state_node("DISPLAY: x\nXAUTHORITY:\n") == ("", "")
 
     def test_returns_empty_on_empty_input(self):
         assert resmod._parse_squeue_state_node("") == ("", "")
@@ -752,15 +746,14 @@ class TestSqueueParserNoiseTolerance:
     def test_handles_pending_state(self):
         # PENDING jobs have no node — the second column is "(Reason)"
         assert resmod._parse_squeue_state_node("PENDING (Resources)\n") == (
-            "PENDING", "(Resources)"
+            "PENDING",
+            "(Resources)",
         )
 
     def test_handles_completing_during_resubmit_overlap(self):
         # During walltime-resubmit, the outgoing job is COMPLETING
         out = "DISPLAY: x:0\nCOMPLETING spartan-bm022\n"
-        assert resmod._parse_squeue_state_node(out) == (
-            "COMPLETING", "spartan-bm022"
-        )
+        assert resmod._parse_squeue_state_node(out) == ("COMPLETING", "spartan-bm022")
 
     def test_picks_first_matching_line_when_multiple_present(self):
         # Defensive: if somehow we got two state-like lines, take the first.
@@ -769,16 +762,13 @@ class TestSqueueParserNoiseTolerance:
 
     def test_squeue_state_method_uses_parser(self, lease_dir, monkeypatch):
         """_squeue_state must filter banner noise via the parser."""
-        spartan_like = (
-            "XAUTHORITY: \nDISPLAY: 1.2.3.4:0\nRUNNING spartan-bm023\n"
-        )
+        spartan_like = "XAUTHORITY: \nDISPLAY: 1.2.3.4:0\nRUNNING spartan-bm023\n"
         monkeypatch.setattr(
-            resmod.subprocess, "run",
+            sshmod.subprocess,
+            "run",
             lambda *a, **k: _proc(stdout=spartan_like),
         )
-        res = Reservation(
-            id="spartan-foo", name="foo", host="spartan", job_id="42"
-        )
+        res = Reservation(id="spartan-foo", name="foo", host="spartan", job_id="42")
         state, node = res._squeue_state()
         assert state == "RUNNING"
         assert node == "spartan-bm023"
@@ -811,9 +801,7 @@ class TestTmuxServerBootstrap:
         """``|| true`` so a re-run doesn't fail if the server is already up."""
         assert "|| true" in resmod._tmux_server_bootstrap("sac")
 
-    def test_book_with_tmux_server_prepends_bootstrap(
-        self, lease_dir, monkeypatch
-    ):
+    def test_book_with_tmux_server_prepends_bootstrap(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")
         captured = []
 
@@ -824,7 +812,7 @@ class TestTmuxServerBootstrap:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg, tmux_server="sac")
 
@@ -843,7 +831,7 @@ class TestTmuxServerBootstrap:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         res = Reservation.book(cfg, tmux_server="sac")
         assert res.extras.get("tmux_server") == "sac"
@@ -852,9 +840,7 @@ class TestTmuxServerBootstrap:
         assert loaded is not None
         assert loaded.extras.get("tmux_server") == "sac"
 
-    def test_book_without_tmux_server_omits_bootstrap(
-        self, lease_dir, monkeypatch
-    ):
+    def test_book_without_tmux_server_omits_bootstrap(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")
         captured = []
 
@@ -865,16 +851,14 @@ class TestTmuxServerBootstrap:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg)
         sbatch_call = captured[0]
         assert "tmux -L" not in sbatch_call
         assert "new-session" not in sbatch_call
 
-    def test_book_combines_persistent_and_tmux_server(
-        self, lease_dir, monkeypatch
-    ):
+    def test_book_combines_persistent_and_tmux_server(self, lease_dir, monkeypatch):
         """Both walltime auto-resubmit AND tmux bootstrap can coexist."""
         cfg = JobConfig(project="dev-pool", host="spartan")
         captured = []
@@ -886,7 +870,7 @@ class TestTmuxServerBootstrap:
                 return _proc(stdout="Submitted batch job 1\n")
             return _proc(stdout="RUNNING node-x\n")
 
-        monkeypatch.setattr(resmod.subprocess, "run", fake_run)
+        monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
         Reservation.book(cfg, persistent=True, tmux_server="sac")
 

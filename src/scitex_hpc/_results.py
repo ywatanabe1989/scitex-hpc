@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
+from scitex_ssh import copy_from, exec_remote
 
 from ._config import JobConfig
 
@@ -17,11 +17,7 @@ def poll_job(config: JobConfig, job_id: str) -> dict:
     """
     host = config.resolve("host")
     cmd = f"sacct -j {job_id} -X --format=State,ExitCode,Elapsed --parsable2 -n"
-    result = subprocess.run(
-        ["ssh", host, f"bash -lc '{cmd}'"],
-        capture_output=True,
-        text=True,
-    )
+    result = exec_remote(host, f"bash -lc '{cmd}'")
     line = (result.stdout or "").strip().splitlines()
     if not line:
         return {}
@@ -52,11 +48,11 @@ def fetch_result(
     host = config.resolve("host")
     remote_base = config.resolve("remote_base")
     name = config.job_name or f"scitex-{config.project}"
-    remote_path = (
-        f"{host}:{remote_base}/{config.project}/.pytest-hpc-output/{name}-{job_id}.out"
+    remote_src = (
+        f"{remote_base}/{config.project}/.pytest-hpc-output/{name}-{job_id}.out"
     )
 
     import os
 
     os.makedirs(local_dir, exist_ok=True)
-    return subprocess.run(["scp", remote_path, local_dir]).returncode == 0
+    return copy_from(host, remote_src, local_dir).success
