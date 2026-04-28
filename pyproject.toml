@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitex-hpc"
-version = "0.6.1"
+version = "0.6.2"
 description = "Generic SLURM dispatch (srun, sbatch, sync, poll, fetch) for the SciTeX ecosystem — login nodes never run compute"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -42,6 +42,11 @@ scitex-hpc = "scitex_hpc._cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship the SKILL.md leaf so skill-discovery agents (scitex-dev, etc.)
+# can find it after `pip install scitex-hpc`.
+scitex_hpc = ["_skills/**/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
