@@ -139,3 +139,45 @@ class TestBookSmoke:
         out = json.loads(capsys.readouterr().out)
         assert out["job_id"] == "99"
         assert out["node"] == "n1"
+
+
+class TestBookTmuxServer:
+    """`--tmux-server` flag wires through to Reservation.book(tmux_server=)."""
+
+    def test_book_with_tmux_server_flag(self, lease_dir, monkeypatch, capsys):
+        captured: list[dict] = []
+
+        def fake_book(cfg, **kwargs):
+            captured.append(kwargs)
+            return Reservation(
+                id="spartan-test", name="test", host="spartan",
+                job_id="42", node="n1", extras=kwargs.get("extras", {}),
+            )
+
+        # We mock the Reservation.book classmethod to capture kwargs
+        from scitex_hpc._cli import Reservation as CliReservation
+        monkeypatch.setattr(CliReservation, "book", fake_book)
+        rc = main([
+            "reservations", "book", "test",
+            "--host", "spartan",
+            "--tmux-server", "sac",
+        ])
+        assert rc == 0
+        assert captured[0].get("tmux_server") == "sac"
+
+    def test_book_without_tmux_server_passes_none(
+        self, lease_dir, monkeypatch
+    ):
+        captured: list[dict] = []
+
+        def fake_book(cfg, **kwargs):
+            captured.append(kwargs)
+            return Reservation(
+                id="spartan-test", name="test", host="spartan",
+                job_id="42", node="n1",
+            )
+
+        from scitex_hpc._cli import Reservation as CliReservation
+        monkeypatch.setattr(CliReservation, "book", fake_book)
+        main(["reservations", "book", "test", "--host", "spartan"])
+        assert captured[0].get("tmux_server") is None
