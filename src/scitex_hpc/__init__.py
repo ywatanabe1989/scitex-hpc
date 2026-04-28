@@ -21,8 +21,15 @@ Login nodes never run compute — every command is wrapped in srun/sbatch.
 
 from __future__ import annotations
 
-__version__ = "0.6.3"
-
+try:
+    from importlib.metadata import version as _v, PackageNotFoundError
+    try:
+        __version__ = _v("scitex-hpc")
+    except PackageNotFoundError:
+        __version__ = "0.0.0+local"
+    del _v, PackageNotFoundError
+except ImportError:  # pragma: no cover — only on ancient Pythons
+    __version__ = "0.0.0+local"
 from ._config import HPC_DEFAULTS, JobConfig
 from ._dispatch import sbatch, srun
 from ._reservation import Reservation
