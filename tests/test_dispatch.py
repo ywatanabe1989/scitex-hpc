@@ -21,16 +21,24 @@ def test_srun_raises_without_command() -> None:
 
 
 def test_srun_invokes_ssh_with_login_shell_wrapped_command() -> None:
-    cfg = JobConfig(project="demo", command="echo hi", cpus=4)
+    # Explicit host + remote_base so the test is independent of the CI/dev
+    # environment's user-config defaults.
+    cfg = JobConfig(
+        project="demo",
+        command="echo hi",
+        cpus=4,
+        host="spartan",
+        remote_base="~/proj",
+    )
     with mock.patch("scitex_hpc._dispatch.exec_remote") as run:
         run.return_value = _result(returncode=0)
         rc = srun(cfg)
     assert rc == 0
     # exec_remote(host, command, ...) — positional args
-    call_args, call_kwargs = run.call_args
+    call_args, _call_kwargs = run.call_args
     host = call_args[0]
     remote_cmd = call_args[1]
-    assert host  # resolved host (e.g., "spartan")
+    assert host == "spartan"
     # The wrapper must run via login shell so srun is on PATH.
     assert "bash -lc" in remote_cmd
     # The remote command must invoke srun with the resolved cpus.
