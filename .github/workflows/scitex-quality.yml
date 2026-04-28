@@ -36,7 +36,7 @@ jobs:
       - name: Install package + scitex-dev audit extras
         run: |
           pip install -e . || true
-          pip install "scitex-dev[cli-audit] @ git+https://github.com/scitex-project/scitex-dev.git@main"
+          pip install "scitex-dev[cli-audit] @ git+https://github.com/ywatanabe1989/scitex-dev.git@main"
 
       - name: Detect package name
         id: pkg
