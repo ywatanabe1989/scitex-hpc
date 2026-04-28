@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from scitex_config._ecosystem import local_state
+
 # Cluster-agnostic fallbacks. host/partition empty by design — supply
 # them via user config, env var, or explicit JobConfig.
 HPC_DEFAULTS: dict[str, Any] = {
@@ -32,10 +34,15 @@ HPC_DEFAULTS: dict[str, Any] = {
     "python_bin": "python3",
 }
 
-_USER_CONFIG_CANDIDATES = (
-    Path.home() / ".scitex" / "hpc" / "config.yaml",
-    Path.home() / ".scitex" / "dev" / "config.yaml",
-)
+
+def _user_config_candidates() -> tuple[Path, ...]:
+    """Candidate user-config paths, resolved at call time so $SCITEX_DIR
+    relocates them per the local-state-directories spec §6."""
+    base = Path(os.environ.get("SCITEX_DIR", str(Path.home() / ".scitex")))
+    return (
+        base / "hpc" / "config.yaml",
+        base / "dev" / "config.yaml",
+    )
 
 
 _KEY_ALIASES = {"cpus_per_task": "cpus"}  # tolerate legacy SLURM-style key
@@ -57,7 +64,7 @@ def _load_user_defaults() -> dict[str, Any]:
         return {}
     merged: dict[str, Any] = {}
     valid_keys = set(HPC_DEFAULTS) | set(_KEY_ALIASES)
-    for path in _USER_CONFIG_CANDIDATES:
+    for path in _user_config_candidates():
         if not path.exists():
             continue
         try:

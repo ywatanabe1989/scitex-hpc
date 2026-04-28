@@ -37,6 +37,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from scitex_config._ecosystem import local_state
+
 from ._config import JobConfig
 from ._dispatch import _quote, _wrap_in_login_shell
 
@@ -61,7 +63,7 @@ def _lease_dir() -> Path:
     override = os.environ.get(_LEASE_DIR_ENV)
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".scitex" / "hpc" / "leases"
+    return local_state.runtime_path("hpc", "leases")
 
 
 def _make_lease_id(host: str, name: str) -> str:
