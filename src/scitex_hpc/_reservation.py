@@ -70,6 +70,50 @@ def _make_lease_id(host: str, name: str) -> str:
     return f"{host}-{safe}"
 
 
+# SLURM job-state vocabulary. Used as a filter to ignore login-shell
+# banner lines (DISPLAY:, XAUTHORITY:, etc.) that prefix the real squeue
+# output on chatty hosts like Spartan.
+_SLURM_STATES: frozenset[str] = frozenset(
+    {
+        "RUNNING",
+        "PENDING",
+        "COMPLETING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELLED",
+        "TIMEOUT",
+        "OUT_OF_MEMORY",
+        "BOOT_FAIL",
+        "DEADLINE",
+        "NODE_FAIL",
+        "PREEMPTED",
+        "REVOKED",
+        "SUSPENDED",
+        "STOPPED",
+        "CONFIGURING",
+        "RESIZING",
+        "REQUEUED",
+    }
+)
+
+
+def _parse_squeue_state_node(stdout: str) -> tuple[str, str]:
+    """Parse ``squeue --noheader --format='%T %N'`` output.
+
+    Robust against login-shell banner noise: scans for the first line
+    whose first whitespace-delimited token is a known SLURM state, and
+    returns ``(state, node)``. Returns ``("", "")`` if no such line.
+    """
+    for line in stdout.splitlines():
+        parts = line.strip().split(None, 1)
+        if not parts or parts[0] not in _SLURM_STATES:
+            continue
+        state = parts[0]
+        node = parts[1] if len(parts) > 1 else ""
+        return state, node
+    return ("", "")
+
+
 def _wrap_with_resubmit_trap(hold_body: str) -> str:
     """Wrap a sbatch script body with the SIGUSR1 walltime auto-resubmit trap.
 
@@ -357,20 +401,22 @@ class Reservation:
         raise TimeoutError(f"job {self.job_id} did not reach RUNNING within {timeout}s")
 
     def _squeue_state(self) -> tuple[str, str]:
-        """Return (state, node) for the current job_id."""
+        """Return (state, node) for the current job_id.
+
+        Robust against chatty ``.bashrc`` banners: many HPC login shells
+        emit lines like ``DISPLAY: 1.2.3.4:0`` before user commands run.
+        We scan stdout line-by-line and pick the line whose first token
+        looks like a SLURM state. (Discovered live on Spartan 2026-04-28
+        when book() polled forever because parts[0] resolved to
+        ``"XAUTHORITY:"`` instead of ``"RUNNING"``.)
+        """
         inner = f"squeue --jobs={self.job_id} --noheader --format='%T %N' 2>/dev/null"
         result = subprocess.run(
             ["ssh", self.host, _wrap_in_login_shell(inner)],
             capture_output=True,
             text=True,
         )
-        line = (result.stdout or "").strip()
-        if not line:
-            return ("", "")
-        parts = line.split(None, 1)
-        state = parts[0]
-        node = parts[1] if len(parts) > 1 else ""
-        return state, node
+        return _parse_squeue_state_node(result.stdout or "")
 
     # ------------------------------------------------------------------
     # Refresh (Phase 2: walltime auto-resubmit)

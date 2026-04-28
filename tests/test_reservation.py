@@ -708,3 +708,77 @@ class TestFromJobid:
             Reservation.from_jobid(host="spartan", job_id="", name="x")
         with pytest.raises(ValueError, match="name"):
             Reservation.from_jobid(host="spartan", job_id="1", name="")
+
+
+# ---------------------------------------------------------------------------
+# Regression — chatty login-shell banners (Spartan 2026-04-28 incident)
+# ---------------------------------------------------------------------------
+
+
+class TestSqueueParserNoiseTolerance:
+    """``_parse_squeue_state_node`` must skip banner noise from chatty
+    login shells (.bashrc emits DISPLAY:, XAUTHORITY:, etc. on Spartan)."""
+
+    def test_parses_clean_output(self):
+        assert resmod._parse_squeue_state_node("RUNNING node-x\n") == (
+            "RUNNING", "node-x"
+        )
+
+    def test_skips_xauthority_display_banner(self):
+        """Real Spartan output: 7 banner lines before the squeue row."""
+        spartan_output = (
+            "XAUTHORITY: \n"
+            "XAUTHORITY_LOGIN: \n"
+            "XAUTHORITY_GPU: \n"
+            "\n"
+            "DISPLAY: 115.146.82.100:15.0\n"
+            "DISPLAY_LOGIN: 115.146.82.100:15.0\n"
+            "DISPLAY_GPU: :42\n"
+            "RUNNING spartan-bm023\n"
+        )
+        assert resmod._parse_squeue_state_node(spartan_output) == (
+            "RUNNING", "spartan-bm023"
+        )
+
+    def test_returns_empty_on_no_match(self):
+        # Banner only, no squeue row (job not found)
+        assert resmod._parse_squeue_state_node("DISPLAY: x\nXAUTHORITY:\n") == (
+            "", ""
+        )
+
+    def test_returns_empty_on_empty_input(self):
+        assert resmod._parse_squeue_state_node("") == ("", "")
+
+    def test_handles_pending_state(self):
+        # PENDING jobs have no node — the second column is "(Reason)"
+        assert resmod._parse_squeue_state_node("PENDING (Resources)\n") == (
+            "PENDING", "(Resources)"
+        )
+
+    def test_handles_completing_during_resubmit_overlap(self):
+        # During walltime-resubmit, the outgoing job is COMPLETING
+        out = "DISPLAY: x:0\nCOMPLETING spartan-bm022\n"
+        assert resmod._parse_squeue_state_node(out) == (
+            "COMPLETING", "spartan-bm022"
+        )
+
+    def test_picks_first_matching_line_when_multiple_present(self):
+        # Defensive: if somehow we got two state-like lines, take the first.
+        out = "RUNNING node-a\nCOMPLETED node-b\n"
+        assert resmod._parse_squeue_state_node(out) == ("RUNNING", "node-a")
+
+    def test_squeue_state_method_uses_parser(self, lease_dir, monkeypatch):
+        """_squeue_state must filter banner noise via the parser."""
+        spartan_like = (
+            "XAUTHORITY: \nDISPLAY: 1.2.3.4:0\nRUNNING spartan-bm023\n"
+        )
+        monkeypatch.setattr(
+            resmod.subprocess, "run",
+            lambda *a, **k: _proc(stdout=spartan_like),
+        )
+        res = Reservation(
+            id="spartan-foo", name="foo", host="spartan", job_id="42"
+        )
+        state, node = res._squeue_state()
+        assert state == "RUNNING"
+        assert node == "spartan-bm023"
