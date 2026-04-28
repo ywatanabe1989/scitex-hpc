@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from scitex_config._ecosystem import local_state
+from scitex_ssh import exec_remote
 
 from ._config import JobConfig
 from ._dispatch import _quote, _wrap_in_login_shell
@@ -386,11 +387,7 @@ class Reservation:
             "#!/bin/bash\n#SBATCH " + "\n#SBATCH ".join(sbatch_args) + f"\n{body}\n"
         )
         inner = f"sbatch <(printf %s {_quote(script_body)})"
-        result = subprocess.run(
-            ["ssh", host, _wrap_in_login_shell(inner)],
-            capture_output=True,
-            text=True,
-        )
+        result = exec_remote(host, _wrap_in_login_shell(inner))
         if result.returncode != 0:
             raise RuntimeError(f"sbatch failed: {result.stderr.strip()}")
         m = re.search(r"Submitted batch job (\d+)", result.stdout)
@@ -420,14 +417,9 @@ class Reservation:
         except BaseException:
             # Best-effort cleanup of the SLURM job; raise the original error.
             try:
-                subprocess.run(
-                    [
-                        "ssh",
-                        host,
-                        _wrap_in_login_shell(f"scancel {job_id}"),
-                    ],
-                    capture_output=True,
-                    text=True,
+                exec_remote(
+                    host,
+                    _wrap_in_login_shell(f"scancel {job_id}"),
                     timeout=30,
                 )
             except Exception:  # pragma: no cover — defensive
@@ -463,11 +455,7 @@ class Reservation:
         ``"XAUTHORITY:"`` instead of ``"RUNNING"``.)
         """
         inner = f"squeue --jobs={self.job_id} --noheader --format='%T %N' 2>/dev/null"
-        result = subprocess.run(
-            ["ssh", self.host, _wrap_in_login_shell(inner)],
-            capture_output=True,
-            text=True,
-        )
+        result = exec_remote(self.host, _wrap_in_login_shell(inner))
         return _parse_squeue_state_node(result.stdout or "")
 
     # ------------------------------------------------------------------
@@ -495,11 +483,7 @@ class Reservation:
             f"squeue --user=$USER --name={_quote(self.name)} "
             "--noheader --format='%i %T %N' 2>/dev/null"
         )
-        result = subprocess.run(
-            ["ssh", self.host, _wrap_in_login_shell(inner)],
-            capture_output=True,
-            text=True,
-        )
+        result = exec_remote(self.host, _wrap_in_login_shell(inner))
         rows: list[tuple[int, str, str]] = []
         for line in (result.stdout or "").splitlines():
             parts = line.strip().split(None, 2)
@@ -535,21 +519,25 @@ class Reservation:
         capture: bool = True,
         check: bool = False,
         timeout: float | None = None,
-    ) -> subprocess.CompletedProcess:
+    ):
         """Run ``cmd`` inside the reservation via ``srun --jobid --overlap``.
 
         Each call pays one ssh handshake. SSH ControlMaster (out of scope
         for this module) amortizes that cost across many calls.
+
+        Returns an object with ``returncode``, ``stdout``, ``stderr`` (a
+        ``scitex_ssh.SSHResult``). The ``capture`` argument is accepted for
+        backward compatibility but ignored — output is always captured.
         """
+        del capture  # always captured by scitex_ssh.exec_remote
         if isinstance(cmd, list):
             cmd_str = " ".join(_quote(c) for c in cmd)
         else:
             cmd_str = cmd
         inner = f"srun --jobid={self.job_id} --overlap bash -lc {_quote(cmd_str)}"
-        return subprocess.run(
-            ["ssh", self.host, _wrap_in_login_shell(inner)],
-            capture_output=capture,
-            text=True,
+        return exec_remote(
+            self.host,
+            _wrap_in_login_shell(inner),
             check=check,
             timeout=timeout,
         )
@@ -574,11 +562,7 @@ class Reservation:
     def release(self, *, missing_ok: bool = True) -> bool:
         """Cancel the SLURM job and remove the lease state file. Idempotent."""
         inner = f"scancel {self.job_id}"
-        result = subprocess.run(
-            ["ssh", self.host, _wrap_in_login_shell(inner)],
-            capture_output=True,
-            text=True,
-        )
+        result = exec_remote(self.host, _wrap_in_login_shell(inner))
         ok = result.returncode == 0
         if not ok and not missing_ok:
             raise RuntimeError(f"scancel {self.job_id} failed: {result.stderr.strip()}")

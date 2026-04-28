@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scitex-hpc"
-version = "0.6.4"
+version = "0.7.0"
 description = "Generic SLURM dispatch (srun, sbatch, sync, poll, fetch) for the SciTeX ecosystem — login nodes never run compute"
 readme = "README.md"
 license = "AGPL-3.0-only"
@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "PyYAML>=5.1",
     "scitex-config>=0.3.0",
+    "scitex-ssh>=1.0.0",
 ]
 
 [project.optional-dependencies]
