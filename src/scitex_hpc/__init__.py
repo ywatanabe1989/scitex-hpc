@@ -37,6 +37,7 @@ from ._results import fetch_result, poll_job
 from ._sync import sync
 
 __all__ = [
+    "__version__",
     "HPC_DEFAULTS",
     "JobConfig",
     "Reservation",
