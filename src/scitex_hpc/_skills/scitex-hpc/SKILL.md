@@ -9,6 +9,7 @@ interfaces:
   skills: 1
   hook: 0
   http: 0
+tags: [scitex-hpc, scitex-package]
 ---
 
 # scitex-hpc
