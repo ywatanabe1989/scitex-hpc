@@ -1,0 +1,168 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scitex_hpc._results &mdash; scitex-hpc 0.7.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=6dfdf7c3"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            scitex-hpc
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">scitex-hpc</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">scitex_hpc._results</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for scitex_hpc._results</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Poll job status + fetch result files.&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">scitex_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="n">copy_from</span><span class="p">,</span> <span class="n">exec_remote</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._config</span><span class="w"> </span><span class="kn">import</span> <span class="n">JobConfig</span>
+
+
+<div class="viewcode-block" id="poll_job">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.poll_job">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">poll_job</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="n">JobConfig</span><span class="p">,</span> <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return ``sacct`` status for ``job_id``.</span>
+
+<span class="sd">    Result keys: ``state`` (e.g. ``RUNNING`` / ``COMPLETED`` / ``FAILED``),</span>
+<span class="sd">    ``exit_code`` (None when not yet finished), ``elapsed`` (HH:MM:SS).</span>
+<span class="sd">    Empty dict if sacct doesn&#39;t know the job (queued for too long, or</span>
+<span class="sd">    invalid ID).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">host</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="s2">&quot;host&quot;</span><span class="p">)</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;sacct -j </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> -X --format=State,ExitCode,Elapsed --parsable2 -n&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">exec_remote</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;bash -lc &#39;</span><span class="si">{</span><span class="n">cmd</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+    <span class="n">line</span> <span class="o">=</span> <span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">splitlines</span><span class="p">()</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">line</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;|&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">3</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+    <span class="n">state</span><span class="p">,</span> <span class="n">exit_code</span><span class="p">,</span> <span class="n">elapsed</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[:</span><span class="mi">3</span><span class="p">]</span>
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;state&quot;</span><span class="p">:</span> <span class="n">state</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+        <span class="s2">&quot;exit_code&quot;</span><span class="p">:</span> <span class="n">exit_code</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">if</span> <span class="n">exit_code</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="k">else</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="s2">&quot;elapsed&quot;</span><span class="p">:</span> <span class="n">elapsed</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span>
+    <span class="p">}</span></div>
+
+
+
+<div class="viewcode-block" id="fetch_result">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.fetch_result">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">fetch_result</span><span class="p">(</span>
+    <span class="n">config</span><span class="p">:</span> <span class="n">JobConfig</span><span class="p">,</span>
+    <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">local_dir</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;.pytest-hpc-output&quot;</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;scp the sbatch job&#39;s stdout file back to ``local_dir``.</span>
+
+<span class="sd">    The remote file is at</span>
+<span class="sd">    ``{remote_base}/{project}/.pytest-hpc-output/&lt;job_name&gt;-&lt;job_id&gt;.out``.</span>
+
+<span class="sd">    Returns True if scp exited 0.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">host</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="s2">&quot;host&quot;</span><span class="p">)</span>
+    <span class="n">remote_base</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="s2">&quot;remote_base&quot;</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">job_name</span> <span class="ow">or</span> <span class="sa">f</span><span class="s2">&quot;scitex-</span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">project</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">remote_src</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">remote_base</span><span class="si">}</span><span class="s2">/</span><span class="si">{</span><span class="n">config</span><span class="o">.</span><span class="n">project</span><span class="si">}</span><span class="s2">/.pytest-hpc-output/</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">.out&quot;</span>
+    <span class="p">)</span>
+
+    <span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+
+    <span class="n">os</span><span class="o">.</span><span class="n">makedirs</span><span class="p">(</span><span class="n">local_dir</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">copy_from</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">remote_src</span><span class="p">,</span> <span class="n">local_dir</span><span class="p">)</span><span class="o">.</span><span class="n">success</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Yusuke Watanabe.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,723 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scitex_hpc._reservation &mdash; scitex-hpc 0.7.2 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=6dfdf7c3"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            scitex-hpc
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">scitex-hpc</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">scitex_hpc._reservation</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for scitex_hpc._reservation</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Reservation primitive — book an HPC node once, exec many commands inside it.</span>
+
+<span class="sd">Motivation: HPC queue wait dominates iteration time. A 30-second test run</span>
+<span class="sd">waits 5 min in the queue. ``Reservation`` lets you submit ONE long-running</span>
+<span class="sd">hold-job, then run many short commands inside its allocation via</span>
+<span class="sd">``srun --jobid=&lt;X&gt; --overlap``. The allocation persists across commands.</span>
+
+<span class="sd">Lifecycle:</span>
+
+<span class="sd">    res = Reservation.book(JobConfig(host=&quot;spartan&quot;, time=&quot;7-0&quot;, ...))</span>
+<span class="sd">    res.exec(&quot;hostname&quot;)              # → &quot;spartan-bm022.hpc.unimelb.edu.au\\n&quot;</span>
+<span class="sd">    res.exec([&quot;python&quot;, &quot;-V&quot;])</span>
+<span class="sd">    res.attach(cmd=&quot;bash&quot;)            # interactive on compute node</span>
+<span class="sd">    res.release()                     # scancel + clear lease</span>
+
+<span class="sd">State (one JSON file per lease):</span>
+
+<span class="sd">    ~/.scitex/hpc/leases/&lt;lease_id&gt;.json</span>
+
+<span class="sd">Lease id format: ``&lt;host&gt;-&lt;name&gt;`` — friendly name uniqueness is enforced</span>
+<span class="sd">per host. (Phase 2 will add walltime auto-resubmit; lease id stays stable</span>
+<span class="sd">across resubmits even though job_id changes.)</span>
+
+<span class="sd">Compatible with the 2026-04-26 IT Security ruling on Spartan: bastion-</span>
+<span class="sd">initiated SSH only, no daemons or tunnels on the login or compute nodes.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">json</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">re</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">asdict</span><span class="p">,</span> <span class="n">dataclass</span><span class="p">,</span> <span class="n">field</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">datetime</span><span class="w"> </span><span class="kn">import</span> <span class="n">datetime</span><span class="p">,</span> <span class="n">timezone</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pathlib</span><span class="w"> </span><span class="kn">import</span> <span class="n">Path</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Any</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">scitex_config._ecosystem</span><span class="w"> </span><span class="kn">import</span> <span class="n">local_state</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scitex_ssh</span><span class="w"> </span><span class="kn">import</span> <span class="n">exec_remote</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">._config</span><span class="w"> </span><span class="kn">import</span> <span class="n">JobConfig</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">._dispatch</span><span class="w"> </span><span class="kn">import</span> <span class="n">_quote</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span>
+
+<span class="n">_DEFAULT_HOLD_BODY</span> <span class="o">=</span> <span class="s2">&quot;tail -f /dev/null&quot;</span>
+<span class="n">_LEASE_DIR_ENV</span> <span class="o">=</span> <span class="s2">&quot;SCITEX_HPC_LEASE_DIR&quot;</span>
+<span class="n">_DEFAULT_POLL_INTERVAL</span> <span class="o">=</span> <span class="mf">2.0</span>
+<span class="n">_DEFAULT_POLL_TIMEOUT</span> <span class="o">=</span> <span class="mf">300.0</span>
+<span class="n">_DEFAULT_RELEASE_BACKOFF</span> <span class="o">=</span> <span class="mf">0.5</span>
+
+<span class="c1"># Walltime auto-resubmit (Phase 2). The trap fires N seconds before</span>
+<span class="c1"># walltime via ``#SBATCH --signal=B:USR1@&lt;N&gt;`` and resubmits the script</span>
+<span class="c1"># in place via ``sbatch &quot;$0&quot;``. SLURM&#39;s documented signaling mechanism —</span>
+<span class="c1"># not a custom daemon, so it&#39;s compatible with the 2026-04-26 IT Security</span>
+<span class="c1"># ruling on Spartan.</span>
+<span class="n">_RESUBMIT_LEAD_SECONDS</span> <span class="o">=</span> <span class="mi">3600</span>  <span class="c1"># request signal 1h before walltime</span>
+<span class="n">_RESUBMIT_SIGNAL</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;B:USR1@</span><span class="si">{</span><span class="n">_RESUBMIT_LEAD_SECONDS</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="n">_USR1_TRAP_FUNC</span> <span class="o">=</span> <span class="s2">&quot;_scitex_hpc_walltime_resubmit&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_lease_dir</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Return ``~/.scitex/hpc/leases/`` (override via ``SCITEX_HPC_LEASE_DIR``).&quot;&quot;&quot;</span>
+    <span class="n">override</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">_LEASE_DIR_ENV</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">override</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">Path</span><span class="p">(</span><span class="n">override</span><span class="p">)</span><span class="o">.</span><span class="n">expanduser</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">local_state</span><span class="o">.</span><span class="n">runtime_path</span><span class="p">(</span><span class="s2">&quot;hpc&quot;</span><span class="p">,</span> <span class="s2">&quot;leases&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_make_lease_id</span><span class="p">(</span><span class="n">host</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lease id is ``&lt;host&gt;-&lt;name&gt;``. Names must be filesystem-safe.&quot;&quot;&quot;</span>
+    <span class="n">safe</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[^A-Za-z0-9._-]&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">safe</span><span class="si">}</span><span class="s2">&quot;</span>
+
+
+<span class="c1"># SLURM job-state vocabulary. Used as a filter to ignore login-shell</span>
+<span class="c1"># banner lines (DISPLAY:, XAUTHORITY:, etc.) that prefix the real squeue</span>
+<span class="c1"># output on chatty hosts like Spartan.</span>
+<span class="n">_SLURM_STATES</span><span class="p">:</span> <span class="nb">frozenset</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">(</span>
+    <span class="p">{</span>
+        <span class="s2">&quot;RUNNING&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;PENDING&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;COMPLETING&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;COMPLETED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;FAILED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;CANCELLED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;TIMEOUT&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;OUT_OF_MEMORY&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;BOOT_FAIL&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;DEADLINE&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;NODE_FAIL&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;PREEMPTED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;REVOKED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;SUSPENDED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;STOPPED&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;CONFIGURING&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;RESIZING&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;REQUEUED&quot;</span><span class="p">,</span>
+    <span class="p">}</span>
+<span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_squeue_state_node</span><span class="p">(</span><span class="n">stdout</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Parse ``squeue --noheader --format=&#39;%T %N&#39;`` output.</span>
+
+<span class="sd">    Robust against login-shell banner noise: scans for the first line</span>
+<span class="sd">    whose first whitespace-delimited token is a known SLURM state, and</span>
+<span class="sd">    returns ``(state, node)``. Returns ``(&quot;&quot;, &quot;&quot;)`` if no such line.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">stdout</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+        <span class="n">parts</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">parts</span> <span class="ow">or</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">_SLURM_STATES</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">state</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+        <span class="n">node</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">return</span> <span class="n">state</span><span class="p">,</span> <span class="n">node</span>
+    <span class="k">return</span> <span class="p">(</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_tmux_server_bootstrap</span><span class="p">(</span><span class="n">socket</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Generate a hold-body fragment that starts a long-lived tmux server.</span>
+
+<span class="sd">    The fragment must be prepended to whatever hold body keeps the job alive</span>
+<span class="sd">    (typically ``tail -f /dev/null``). Example assembled body::</span>
+
+<span class="sd">        tmux -L sac new-session -d -s _root &#39;sleep infinity&#39;</span>
+<span class="sd">        tail -f /dev/null</span>
+
+<span class="sd">    Why this is necessary for multi-tenant agents (Phase 4 of #1):</span>
+
+<span class="sd">    SLURM kills *all processes in a step&#39;s cgroup* when the step ends.</span>
+<span class="sd">    A tmux daemon spawned by ``srun --jobid --overlap`` therefore dies</span>
+<span class="sd">    immediately — verified live on spartan-bm021 2026-04-28.</span>
+
+<span class="sd">    But a tmux server started by the **sbatch script itself** (the job&#39;s</span>
+<span class="sd">    main process) lives in the job&#39;s cgroup, not a transient step&#39;s</span>
+<span class="sd">    cgroup. It survives as long as the script&#39;s tail/sleep keeps the job</span>
+<span class="sd">    alive. Tenants can then ``tmux -L &lt;socket&gt; new-session -t _root ...``</span>
+<span class="sd">    against the same socket and their sessions survive too.</span>
+
+<span class="sd">    The socket name is per-job, so multiple reservations on the same</span>
+<span class="sd">    compute node can coexist with different sockets.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">safe_socket</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[^A-Za-z0-9._-]&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="n">socket</span><span class="p">)</span>
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;# scitex-hpc tmux server bootstrap (Phase 4 multi-tenant support)</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;tmux -L </span><span class="si">{</span><span class="n">safe_socket</span><span class="si">}</span><span class="s2"> new-session -d -s _root &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;&#39;sleep infinity&#39; 2&gt;/dev/null || true</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_wrap_with_resubmit_trap</span><span class="p">(</span><span class="n">hold_body</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Wrap a sbatch script body with the SIGUSR1 walltime auto-resubmit trap.</span>
+
+<span class="sd">    The trap calls ``sbatch &quot;$0&quot;`` to resubmit the script in place.</span>
+<span class="sd">    SLURM signals USR1 at ``--signal=B:USR1@&lt;N&gt;`` so the trap fires N</span>
+<span class="sd">    seconds before walltime expires; the new job lands in the queue</span>
+<span class="sd">    while the old one is still running, so the allocation is effectively</span>
+<span class="sd">    permanent (modulo cluster-side intervention).</span>
+
+<span class="sd">    The trap function is named uniquely to avoid colliding with anything</span>
+<span class="sd">    the user&#39;s hold body might define.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">trap</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">_USR1_TRAP_FUNC</span><span class="si">}</span><span class="s2">() </span><span class="se">{{\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s1">&#39;  echo &quot;[scitex-hpc] walltime approaching; resubmitting via sbatch $0&quot; &gt;&amp;2</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="sa">f</span><span class="s1">&#39;  sbatch &quot;$0&quot;</span><span class="se">\n</span><span class="s1">&#39;</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="se">}}\n</span><span class="s2">&quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;trap </span><span class="si">{</span><span class="n">_USR1_TRAP_FUNC</span><span class="si">}</span><span class="s2"> USR1</span><span class="se">\n</span><span class="s2">&quot;</span>
+    <span class="p">)</span>
+    <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">trap</span><span class="si">}{</span><span class="n">hold_body</span><span class="si">}</span><span class="s2">&quot;</span>
+
+
+<div class="viewcode-block" id="Reservation">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation">[docs]</a>
+<span class="nd">@dataclass</span>
+<span class="k">class</span><span class="w"> </span><span class="nc">Reservation</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;An open SLURM allocation that accepts many commands.&quot;&quot;&quot;</span>
+
+    <span class="nb">id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">name</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">host</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span>
+    <span class="n">node</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">submitted_at</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">walltime_end</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+    <span class="n">persistent</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Persistence</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">state_path</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">_lease_dir</span><span class="p">()</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+
+<div class="viewcode-block" id="Reservation.save">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.save">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">save</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">path</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">state_path</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">parent</span><span class="o">.</span><span class="n">mkdir</span><span class="p">(</span><span class="n">parents</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">exist_ok</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+        <span class="n">path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">dumps</span><span class="p">(</span><span class="n">asdict</span><span class="p">(</span><span class="bp">self</span><span class="p">),</span> <span class="n">indent</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">sort_keys</span><span class="o">=</span><span class="kc">True</span><span class="p">))</span></div>
+
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">_from_path</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation&quot;</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">loads</span><span class="p">(</span><span class="n">path</span><span class="o">.</span><span class="n">read_text</span><span class="p">())</span>
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span><span class="o">**</span><span class="n">data</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Lookup</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.get">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.get">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">get</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name_or_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation | None&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Look up a reservation by lease id, or by friendly name (+ optional host).&quot;&quot;&quot;</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">_lease_dir</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">d</span><span class="o">.</span><span class="n">is_dir</span><span class="p">():</span>
+            <span class="k">return</span> <span class="kc">None</span>
+        <span class="c1"># Direct hit by lease id</span>
+        <span class="n">direct</span> <span class="o">=</span> <span class="n">d</span> <span class="o">/</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name_or_id</span><span class="si">}</span><span class="s2">.json&quot;</span>
+        <span class="k">if</span> <span class="n">direct</span><span class="o">.</span><span class="n">is_file</span><span class="p">():</span>
+            <span class="k">return</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_from_path</span><span class="p">(</span><span class="n">direct</span><span class="p">)</span>
+        <span class="c1"># Search by name; if host given, narrow the search</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.json&quot;</span><span class="p">)):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">res</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">_from_path</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">res</span><span class="o">.</span><span class="n">name</span> <span class="o">!=</span> <span class="n">name_or_id</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">if</span> <span class="n">host</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">res</span><span class="o">.</span><span class="n">host</span> <span class="o">!=</span> <span class="n">host</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="k">return</span> <span class="n">res</span>
+        <span class="k">return</span> <span class="kc">None</span></div>
+
+
+<div class="viewcode-block" id="Reservation.require">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.require">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">require</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">name_or_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">host</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Like ``get`` but raises ``KeyError`` if missing.&quot;&quot;&quot;</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">name_or_id</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">res</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">scope</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot; on </span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">&quot;</span> <span class="k">if</span> <span class="n">host</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="k">raise</span> <span class="ne">KeyError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;no reservation named </span><span class="si">{</span><span class="n">name_or_id</span><span class="si">!r}{</span><span class="n">scope</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+<div class="viewcode-block" id="Reservation.list">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.list">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">list</span><span class="p">(</span><span class="bp">cls</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="s2">&quot;Reservation&quot;</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;All reservations on the current host&#39;s lease dir.&quot;&quot;&quot;</span>
+        <span class="n">d</span> <span class="o">=</span> <span class="n">_lease_dir</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">d</span><span class="o">.</span><span class="n">is_dir</span><span class="p">():</span>
+            <span class="k">return</span> <span class="p">[]</span>
+        <span class="n">out</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">Reservation</span><span class="p">]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="nb">sorted</span><span class="p">(</span><span class="n">d</span><span class="o">.</span><span class="n">glob</span><span class="p">(</span><span class="s2">&quot;*.json&quot;</span><span class="p">)):</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">out</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="bp">cls</span><span class="o">.</span><span class="n">_from_path</span><span class="p">(</span><span class="n">p</span><span class="p">))</span>
+            <span class="k">except</span> <span class="p">(</span><span class="n">json</span><span class="o">.</span><span class="n">JSONDecodeError</span><span class="p">,</span> <span class="ne">TypeError</span><span class="p">):</span>
+                <span class="k">continue</span>
+        <span class="k">return</span> <span class="n">out</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Adoption (Phase 3 enabler)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.from_jobid">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.from_jobid">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_jobid</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">host</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">job_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+        <span class="n">persistent</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">save</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">refresh_node</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Adopt an *already-submitted* SLURM job into a Reservation.</span>
+
+<span class="sd">        Use case: consumers (e.g. scitex-agent-container&#39;s SlurmRuntime)</span>
+<span class="sd">        that build their own sbatch scripts with custom hardeners can</span>
+<span class="sd">        still surface as Reservations after submission. They run their</span>
+<span class="sd">        own ``sbatch …`` to get the job_id, then call ``from_jobid(...)``</span>
+<span class="sd">        to write the lease file and gain the Reservation API surface</span>
+<span class="sd">        (exec, attach, refresh, release, list).</span>
+
+<span class="sd">        Refuses to overwrite an existing lease (use ``release()`` first</span>
+<span class="sd">        if you want to re-adopt a different job under the same name).</span>
+
+<span class="sd">        If ``refresh_node=True`` (default), polls squeue once to populate</span>
+<span class="sd">        the ``node`` field. Pass False to skip the network round-trip</span>
+<span class="sd">        when the caller already knows the node.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">host</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;from_jobid requires non-empty host&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">():</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;from_jobid requires non-empty job_id&quot;</span><span class="p">)</span>
+        <span class="n">clean_name</span> <span class="o">=</span> <span class="p">(</span><span class="n">name</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">clean_name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;from_jobid requires non-empty name&quot;</span><span class="p">)</span>
+        <span class="n">lease_id</span> <span class="o">=</span> <span class="n">_make_lease_id</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">clean_name</span><span class="p">)</span>
+
+        <span class="n">existing</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lease_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;reservation </span><span class="si">{</span><span class="n">lease_id</span><span class="si">}</span><span class="s2"> already exists; release it first&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">lease_id</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">clean_name</span><span class="p">,</span>
+            <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+            <span class="n">job_id</span><span class="o">=</span><span class="nb">str</span><span class="p">(</span><span class="n">job_id</span><span class="p">),</span>
+            <span class="n">submitted_at</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(</span><span class="n">timespec</span><span class="o">=</span><span class="s2">&quot;seconds&quot;</span><span class="p">),</span>
+            <span class="n">persistent</span><span class="o">=</span><span class="n">persistent</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="k">if</span> <span class="n">refresh_node</span><span class="p">:</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">_</span><span class="p">,</span> <span class="n">node</span> <span class="o">=</span> <span class="n">res</span><span class="o">.</span><span class="n">_squeue_state</span><span class="p">()</span>
+                <span class="n">res</span><span class="o">.</span><span class="n">node</span> <span class="o">=</span> <span class="n">node</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># pragma: no cover — defensive</span>
+                <span class="k">pass</span>
+        <span class="k">if</span> <span class="n">save</span><span class="p">:</span>
+            <span class="n">res</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Booking</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.book">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.book">[docs]</a>
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">book</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">config</span><span class="p">:</span> <span class="n">JobConfig</span><span class="p">,</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">persistent</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">hold_body</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">tmux_server</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">poll_interval</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_POLL_INTERVAL</span><span class="p">,</span>
+        <span class="n">poll_timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">_DEFAULT_POLL_TIMEOUT</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Submit a hold-job, wait for SLURM to allocate a node, return Reservation.</span>
+
+<span class="sd">        ``hold_body`` is the body of the sbatch script. Defaults to</span>
+<span class="sd">        ``tail -f /dev/null`` so the allocation persists. Pass a custom body</span>
+<span class="sd">        when a consumer (e.g. scitex-agent-container) needs to set up tmux,</span>
+<span class="sd">        traps, etc. on the compute node before the hold.</span>
+
+<span class="sd">        ``persistent=True`` enables walltime auto-resubmit: the sbatch</span>
+<span class="sd">        wrapper installs a SIGUSR1 trap that calls ``sbatch &quot;$0&quot;`` shortly</span>
+<span class="sd">        before walltime expires (via ``#SBATCH --signal=B:USR1@3600``).</span>
+<span class="sd">        The lease keeps its friendly name across resubmits; the SLURM</span>
+<span class="sd">        ``job_id`` changes, so use ``Reservation.refresh()`` to update</span>
+<span class="sd">        the cached job_id before ``exec()`` / ``attach()`` calls that</span>
+<span class="sd">        cross a resubmit boundary.</span>
+
+<span class="sd">        ``tmux_server`` (Phase 4): if set to a socket name (e.g. ``&quot;sac&quot;``),</span>
+<span class="sd">        the sbatch script bootstraps a tmux server via</span>
+<span class="sd">        ``tmux -L &lt;name&gt; new-session -d -s _root &#39;sleep infinity&#39;`` BEFORE</span>
+<span class="sd">        the hold body runs. This makes the tmux server a child of the</span>
+<span class="sd">        sbatch script (the job&#39;s main process), so it lives in the job&#39;s</span>
+<span class="sd">        cgroup — surviving past any ``srun --jobid --overlap`` step that</span>
+<span class="sd">        would otherwise terminate it. Tenants then attach via</span>
+<span class="sd">        ``tmux -L &lt;name&gt; ...`` and their sessions outlive their setup</span>
+<span class="sd">        commands. The socket name is stored in the Reservation as</span>
+<span class="sd">        ``extras[&quot;tmux_server&quot;]`` so consumers can rediscover it.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">host</span> <span class="o">=</span> <span class="n">config</span><span class="o">.</span><span class="n">resolve</span><span class="p">(</span><span class="s2">&quot;host&quot;</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">host</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;JobConfig.host is required for Reservation.book()&quot;</span><span class="p">)</span>
+        <span class="n">name</span> <span class="o">=</span> <span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">job_name</span> <span class="ow">or</span> <span class="n">config</span><span class="o">.</span><span class="n">project</span> <span class="ow">or</span> <span class="s2">&quot;lease&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">name</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;Reservation.book() requires a non-empty name&quot;</span><span class="p">)</span>
+        <span class="n">lease_id</span> <span class="o">=</span> <span class="n">_make_lease_id</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+
+        <span class="c1"># Refuse to overwrite an existing live lease silently</span>
+        <span class="n">existing</span> <span class="o">=</span> <span class="bp">cls</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">lease_id</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">existing</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">FileExistsError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;reservation </span><span class="si">{</span><span class="n">lease_id</span><span class="si">}</span><span class="s2"> already exists; release it first&quot;</span>
+            <span class="p">)</span>
+
+        <span class="n">body</span> <span class="o">=</span> <span class="n">hold_body</span> <span class="k">if</span> <span class="n">hold_body</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">_DEFAULT_HOLD_BODY</span>
+        <span class="k">if</span> <span class="n">tmux_server</span><span class="p">:</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="n">_tmux_server_bootstrap</span><span class="p">(</span><span class="n">tmux_server</span><span class="p">)</span> <span class="o">+</span> <span class="n">body</span>
+        <span class="k">if</span> <span class="n">persistent</span><span class="p">:</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="n">_wrap_with_resubmit_trap</span><span class="p">(</span><span class="n">body</span><span class="p">)</span>
+        <span class="n">sbatch_args</span> <span class="o">=</span> <span class="p">[</span><span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">slurm_args</span><span class="p">(),</span> <span class="o">*</span><span class="n">config</span><span class="o">.</span><span class="n">extra_sbatch_args</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">persistent</span><span class="p">:</span>
+            <span class="c1"># SLURM sends SIGUSR1 to the batch script N seconds before walltime;</span>
+            <span class="c1"># the trap wired into ``body`` resubmits ``$0``.</span>
+            <span class="n">sbatch_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;--signal=</span><span class="si">{</span><span class="n">_RESUBMIT_SIGNAL</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">script_body</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="s2">&quot;#!/bin/bash</span><span class="se">\n</span><span class="s2">#SBATCH &quot;</span> <span class="o">+</span> <span class="s2">&quot;</span><span class="se">\n</span><span class="s2">#SBATCH &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">sbatch_args</span><span class="p">)</span> <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="si">{</span><span class="n">body</span><span class="si">}</span><span class="se">\n</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;sbatch &lt;(printf %s </span><span class="si">{</span><span class="n">_quote</span><span class="p">(</span><span class="n">script_body</span><span class="p">)</span><span class="si">}</span><span class="s2">)&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">exec_remote</span><span class="p">(</span><span class="n">host</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">))</span>
+        <span class="k">if</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;sbatch failed: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="n">m</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;Submitted batch job (\d+)&quot;</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">m</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                <span class="sa">f</span><span class="s2">&quot;could not parse jobid from sbatch output: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span><span class="si">!r}</span><span class="s2">&quot;</span>
+            <span class="p">)</span>
+        <span class="n">job_id</span> <span class="o">=</span> <span class="n">m</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+        <span class="n">extras</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+        <span class="k">if</span> <span class="n">tmux_server</span><span class="p">:</span>
+            <span class="n">extras</span><span class="p">[</span><span class="s2">&quot;tmux_server&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">tmux_server</span>
+        <span class="n">res</span> <span class="o">=</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="nb">id</span><span class="o">=</span><span class="n">lease_id</span><span class="p">,</span>
+            <span class="n">name</span><span class="o">=</span><span class="n">name</span><span class="p">,</span>
+            <span class="n">host</span><span class="o">=</span><span class="n">host</span><span class="p">,</span>
+            <span class="n">job_id</span><span class="o">=</span><span class="n">job_id</span><span class="p">,</span>
+            <span class="n">submitted_at</span><span class="o">=</span><span class="n">datetime</span><span class="o">.</span><span class="n">now</span><span class="p">(</span><span class="n">timezone</span><span class="o">.</span><span class="n">utc</span><span class="p">)</span><span class="o">.</span><span class="n">isoformat</span><span class="p">(</span><span class="n">timespec</span><span class="o">=</span><span class="s2">&quot;seconds&quot;</span><span class="p">),</span>
+            <span class="n">persistent</span><span class="o">=</span><span class="n">persistent</span><span class="p">,</span>
+            <span class="n">extras</span><span class="o">=</span><span class="n">extras</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="c1"># Defer save() until allocation is confirmed. If the job times out</span>
+        <span class="c1"># or fails, scancel and leave no orphan state file. (Leaking SLURM</span>
+        <span class="c1"># jobs is what created a runaway 5-minute test cost on 2026-04-28.)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="n">res</span><span class="o">.</span><span class="n">_wait_for_allocation</span><span class="p">(</span><span class="n">poll_interval</span><span class="o">=</span><span class="n">poll_interval</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">poll_timeout</span><span class="p">)</span>
+        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
+            <span class="c1"># Best-effort cleanup of the SLURM job; raise the original error.</span>
+            <span class="k">try</span><span class="p">:</span>
+                <span class="n">exec_remote</span><span class="p">(</span>
+                    <span class="n">host</span><span class="p">,</span>
+                    <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;scancel </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">),</span>
+                    <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+                <span class="p">)</span>
+            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># pragma: no cover — defensive</span>
+                <span class="k">pass</span>
+            <span class="k">raise</span>
+        <span class="n">res</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="n">res</span></div>
+
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_wait_for_allocation</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">poll_interval</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Poll squeue until the job is RUNNING and a compute node is known.&quot;&quot;&quot;</span>
+        <span class="n">deadline</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">+</span> <span class="n">timeout</span>
+        <span class="k">while</span> <span class="n">time</span><span class="o">.</span><span class="n">monotonic</span><span class="p">()</span> <span class="o">&lt;</span> <span class="n">deadline</span><span class="p">:</span>
+            <span class="n">state</span><span class="p">,</span> <span class="n">node</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">_squeue_state</span><span class="p">()</span>
+            <span class="k">if</span> <span class="n">state</span> <span class="o">==</span> <span class="s2">&quot;RUNNING&quot;</span> <span class="ow">and</span> <span class="n">node</span><span class="p">:</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">node</span> <span class="o">=</span> <span class="n">node</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+                <span class="k">return</span>
+            <span class="k">if</span> <span class="n">state</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;FAILED&quot;</span><span class="p">,</span> <span class="s2">&quot;CANCELLED&quot;</span><span class="p">,</span> <span class="s2">&quot;COMPLETED&quot;</span><span class="p">,</span> <span class="s2">&quot;TIMEOUT&quot;</span><span class="p">):</span>
+                <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;job </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> ended in state </span><span class="si">{</span><span class="n">state</span><span class="si">}</span><span class="s2"> before allocation&quot;</span>
+                <span class="p">)</span>
+            <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">poll_interval</span><span class="p">)</span>
+        <span class="k">raise</span> <span class="ne">TimeoutError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;job </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> did not reach RUNNING within </span><span class="si">{</span><span class="n">timeout</span><span class="si">}</span><span class="s2">s&quot;</span><span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">_squeue_state</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Return (state, node) for the current job_id.</span>
+
+<span class="sd">        Robust against chatty ``.bashrc`` banners: many HPC login shells</span>
+<span class="sd">        emit lines like ``DISPLAY: 1.2.3.4:0`` before user commands run.</span>
+<span class="sd">        We scan stdout line-by-line and pick the line whose first token</span>
+<span class="sd">        looks like a SLURM state. (Discovered live on Spartan 2026-04-28</span>
+<span class="sd">        when book() polled forever because parts[0] resolved to</span>
+<span class="sd">        ``&quot;XAUTHORITY:&quot;`` instead of ``&quot;RUNNING&quot;``.)</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;squeue --jobs=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> --noheader --format=&#39;%T %N&#39; 2&gt;/dev/null&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">exec_remote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">_parse_squeue_state_node</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Refresh (Phase 2: walltime auto-resubmit)</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.refresh">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.refresh">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">refresh</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">save</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;Reservation&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Re-discover the current ``job_id`` and ``node`` via squeue.</span>
+
+<span class="sd">        Persistent reservations resubmit themselves shortly before walltime</span>
+<span class="sd">        via the SIGUSR1 trap, so the SLURM ``job_id`` changes periodically.</span>
+<span class="sd">        Friendly name (and lease id) stays stable. ``refresh()`` queries</span>
+<span class="sd">        ``squeue --user=$USER --name=&lt;friendly-name&gt;`` and updates the</span>
+<span class="sd">        cached job_id / node in place.</span>
+
+<span class="sd">        Returns ``self`` for chaining; if ``save=True`` (default) the new</span>
+<span class="sd">        state is persisted to the lease file.</span>
+
+<span class="sd">        Behavior in edge cases:</span>
+<span class="sd">        - No matching job in queue → fields cleared (job_id=&quot;&quot;, node=&quot;&quot;)</span>
+<span class="sd">        - Multiple matching jobs (resubmit overlap window) → picks the</span>
+<span class="sd">          newest jobid, since the older one is about to exit</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;squeue --user=$USER --name=</span><span class="si">{</span><span class="n">_quote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">name</span><span class="p">)</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="s2">&quot;--noheader --format=&#39;</span><span class="si">%i</span><span class="s2"> %T %N&#39; 2&gt;/dev/null&quot;</span>
+        <span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">exec_remote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">))</span>
+        <span class="n">rows</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">stdout</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="n">line</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">2</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span> <span class="ow">or</span> <span class="ow">not</span> <span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">.</span><span class="n">isdigit</span><span class="p">():</span>
+                <span class="k">continue</span>
+            <span class="n">jobid_int</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="n">state</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">node</span> <span class="o">=</span> <span class="n">parts</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">append</span><span class="p">((</span><span class="n">jobid_int</span><span class="p">,</span> <span class="n">state</span><span class="p">,</span> <span class="n">node</span><span class="p">))</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">rows</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">node</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># Newest jobid wins — the resubmit-overlap window has the</span>
+            <span class="c1"># outgoing (older) job and the incoming (newer) one; we want</span>
+            <span class="c1"># the one that will keep running.</span>
+            <span class="n">rows</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">key</span><span class="o">=</span><span class="k">lambda</span> <span class="n">t</span><span class="p">:</span> <span class="n">t</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">reverse</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+            <span class="n">best</span> <span class="o">=</span> <span class="n">rows</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span> <span class="o">=</span> <span class="nb">str</span><span class="p">(</span><span class="n">best</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">node</span> <span class="o">=</span> <span class="n">best</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">save</span> <span class="ow">and</span> <span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">return</span> <span class="bp">self</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Exec / attach</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.exec">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.exec">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">exec</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span>
+        <span class="o">*</span><span class="p">,</span>
+        <span class="n">capture</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">check</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+        <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="p">):</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Run ``cmd`` inside the reservation via ``srun --jobid --overlap``.</span>
+
+<span class="sd">        Each call pays one ssh handshake. SSH ControlMaster (out of scope</span>
+<span class="sd">        for this module) amortizes that cost across many calls.</span>
+
+<span class="sd">        Returns an object with ``returncode``, ``stdout``, ``stderr`` (a</span>
+<span class="sd">        ``scitex_ssh.SSHResult``). The ``capture`` argument is accepted for</span>
+<span class="sd">        backward compatibility but ignored — output is always captured.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">del</span> <span class="n">capture</span>  <span class="c1"># always captured by scitex_ssh.exec_remote</span>
+        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">cmd</span><span class="p">,</span> <span class="nb">list</span><span class="p">):</span>
+            <span class="n">cmd_str</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">_quote</span><span class="p">(</span><span class="n">c</span><span class="p">)</span> <span class="k">for</span> <span class="n">c</span> <span class="ow">in</span> <span class="n">cmd</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cmd_str</span> <span class="o">=</span> <span class="n">cmd</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;srun --jobid=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> --overlap bash -lc </span><span class="si">{</span><span class="n">_quote</span><span class="p">(</span><span class="n">cmd_str</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="k">return</span> <span class="n">exec_remote</span><span class="p">(</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span>
+            <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">),</span>
+            <span class="n">check</span><span class="o">=</span><span class="n">check</span><span class="p">,</span>
+            <span class="n">timeout</span><span class="o">=</span><span class="n">timeout</span><span class="p">,</span>
+        <span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="Reservation.attach">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.attach">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">attach</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">cmd</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="n">pty</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Interactive attach via ``srun --jobid --pty``. Blocks until exit.&quot;&quot;&quot;</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;srun --jobid=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> &quot;</span>
+            <span class="o">+</span> <span class="p">(</span><span class="s2">&quot;--pty &quot;</span> <span class="k">if</span> <span class="n">pty</span> <span class="k">else</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+            <span class="o">+</span> <span class="sa">f</span><span class="s2">&quot;bash -lc </span><span class="si">{</span><span class="n">_quote</span><span class="p">(</span><span class="n">cmd</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="p">)</span>
+        <span class="n">ssh_args</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;ssh&quot;</span><span class="p">]</span>
+        <span class="k">if</span> <span class="n">pty</span><span class="p">:</span>
+            <span class="n">ssh_args</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;-t&quot;</span><span class="p">)</span>
+        <span class="n">ssh_args</span> <span class="o">+=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">)]</span>
+        <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">ssh_args</span><span class="p">)</span><span class="o">.</span><span class="n">returncode</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Release</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+<div class="viewcode-block" id="Reservation.release">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.Reservation.release">[docs]</a>
+    <span class="k">def</span><span class="w"> </span><span class="nf">release</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">missing_ok</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">bool</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Cancel the SLURM job and remove the lease state file. Idempotent.&quot;&quot;&quot;</span>
+        <span class="n">inner</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;scancel </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="n">exec_remote</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="p">,</span> <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="n">inner</span><span class="p">))</span>
+        <span class="n">ok</span> <span class="o">=</span> <span class="n">result</span><span class="o">.</span><span class="n">returncode</span> <span class="o">==</span> <span class="mi">0</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">ok</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">missing_ok</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;scancel </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">}</span><span class="s2"> failed: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">stderr</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="c1"># Best-effort wait so a follow-up book() with the same name doesn&#39;t</span>
+        <span class="c1"># race the still-RUNNING job. Capped at one short backoff.</span>
+        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">_DEFAULT_RELEASE_BACKOFF</span><span class="p">)</span>
+        <span class="k">try</span><span class="p">:</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">state_path</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+            <span class="k">pass</span>
+        <span class="k">return</span> <span class="n">ok</span></div>
+
+
+    <span class="c1"># ------------------------------------------------------------------</span>
+    <span class="c1"># Repr</span>
+    <span class="c1"># ------------------------------------------------------------------</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="fm">__repr__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">(</span>
+            <span class="sa">f</span><span class="s2">&quot;Reservation(id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">id</span><span class="si">!r}</span><span class="s2">, host=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">host</span><span class="si">!r}</span><span class="s2">, &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;job_id=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">job_id</span><span class="si">!r}</span><span class="s2">, node=</span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">node</span><span class="si">!r}</span><span class="s2">)&quot;</span>
+        <span class="p">)</span></div>
+
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Yusuke Watanabe.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
