@@ -10,17 +10,40 @@
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 <!-- scitex-badges:end -->
 
-Generic SLURM dispatch for the [SciTeX](https://github.com/ywatanabe1989/scitex-python) ecosystem — `srun` / `sbatch` / `sync` / `poll_job` / `fetch_result` with sane defaults for spartan/sapphire and override knobs for any other cluster.
+<p align="center">
+  <a href="https://scitex.ai">
+    <img src="docs/scitex-logo-blue-cropped.png" alt="SciTeX" width="400">
+  </a>
+</p>
 
-**Login nodes never run compute** — every command is wrapped in `srun` or `sbatch` via a login-shell SSH so the SLURM module loads correctly.
+<p align="center"><b>Generic SLURM dispatch — `srun` / `sbatch` / reservations / sync / poll / fetch — for any HPC cluster.</b></p>
 
-## Install
+<p align="center">
+  <a href="https://scitex-hpc.readthedocs.io/">Full Documentation</a> · <code>pip install scitex-hpc</code>
+</p>
+
+---
+
+## Problem and Solution
+
+| # | Problem | Solution |
+|---|---------|----------|
+| 1 | **Login nodes silently run compute** — sysadmins kill stray processes, jobs die unannounced | **Every command wrapped in `srun` / `sbatch`** via login-shell SSH so SLURM modules load correctly |
+| 2 | **Queue wait dominates iteration** for short multi-agent / dev workflows | **`Reservation.book(..., persistent=True)`** — book a node once, `exec()` many short commands inside the same allocation; SIGUSR1 trap auto-resubmits at walltime |
+| 3 | **Per-cluster knob soup** (partition, cpus, time, mem) repeated in every job script | **`SCITEX_HPC_*` env overrides** + `JobConfig` defaults for spartan/sapphire — script once, deploy anywhere |
+
+## Installation
 
 ```bash
 pip install scitex-hpc
 ```
 
-## Usage
+## 1 Interfaces
+
+<details open>
+<summary><strong>Python API ⭐⭐⭐ (primary)</strong></summary>
+
+<br>
 
 ```python
 from scitex_hpc import JobConfig, srun, sbatch, sync, poll_job, fetch_result
@@ -28,59 +51,43 @@ from scitex_hpc import JobConfig, srun, sbatch, sync, poll_job, fetch_result
 cfg = JobConfig(
     project="scitex-dsp",
     command="pip install -e '.[dev]' -q && python -m pytest tests/ -n 16",
-    host="spartan",
-    partition="sapphire",
-    cpus=16,
-    time="00:30:00",
-    mem="64G",
+    host="spartan", partition="sapphire",
+    cpus=16, time="00:30:00", mem="64G",
 )
 
-# 1. Sync local sources to the cluster.
-sync(cfg)
-
-# 2a. Blocking interactive run via srun.
-exit_code = srun(cfg)
-
-# 2b. Async batch submission via sbatch.
-job_id = sbatch(cfg)
-print(poll_job(cfg, job_id))   # {'state': 'COMPLETED', 'exit_code': '0:0', 'elapsed': '00:01:23'}
-fetch_result(cfg, job_id)      # downloads the .out file
+sync(cfg)                           # 1. push local sources to the cluster
+exit_code = srun(cfg)               # 2a. blocking interactive run
+job_id = sbatch(cfg)                # 2b. async batch submission
+print(poll_job(cfg, job_id))        # {'state': 'COMPLETED', 'exit_code': '0:0', ...}
+fetch_result(cfg, job_id)           # downloads the .out file
 ```
 
-## Reservations (book once, exec many)
-
-For workflows where queue wait dominates iteration time — multi-agent
-fleets, distributed test runners, jupyter-on-HPC — book a node *once*
-and run many short commands inside its allocation:
+### Reservations (book once, exec many)
 
 ```python
 from scitex_hpc import JobConfig, Reservation
 
-# Book a 7-day allocation
 res = Reservation.book(
-    JobConfig(
-        project="dev-pool",
-        host="spartan",
-        partition="cascade",
-        cpus=8, mem="32G", time="7-0",
-    ),
-    persistent=True,        # walltime auto-resubmit via SIGUSR1 trap
+    JobConfig(project="dev-pool", host="spartan", partition="cascade",
+              cpus=8, mem="32G", time="7-0"),
+    persistent=True,                # walltime auto-resubmit via SIGUSR1
 )
 
-# Run many commands inside the SAME allocation — no queue wait
-res.exec("hostname")                          # → "spartan-bm022.hpc..."
+res.exec("hostname")
 res.exec(["python", "-m", "unittest", "discover"])
-res.exec("tmux new -d -s helper claude --dangerously-skip-permissions")
+res.attach(cmd="bash")              # interactive shell on the compute node
 
-# Open an interactive shell on the compute node
-res.attach(cmd="bash")
-
-# Or look up later by friendly name (state lives in ~/.scitex/hpc/leases/)
+# Look up later by friendly name (state in ~/.scitex/hpc/leases/)
 res = Reservation.get("dev-pool")
-res.release()                                 # scancel + clear state
+res.release()                       # scancel + clear state
 ```
 
-Equivalent CLI:
+</details>
+
+<details>
+<summary><strong>CLI ⭐⭐</strong></summary>
+
+<br>
 
 ```bash
 scitex-hpc reservations book dev-pool --host spartan --cpus 8 --mem 32G --time 7-0 --persistent
@@ -90,28 +97,7 @@ scitex-hpc reservations attach dev-pool
 scitex-hpc reservations release dev-pool
 ```
 
-**Compatible with bastion-only HPC policies.** No daemons, no tunnels,
-no `crontab @reboot`. Every `exec()` is a fresh ssh round-trip. SSH
-ControlMaster pooling on the calling host amortizes the handshake cost.
-
-### Walltime auto-resubmit (`persistent=True`)
-
-When `persistent=True`, scitex-hpc:
-
-1. Adds `#SBATCH --signal=B:USR1@3600` so SLURM signals the script 1h before walltime.
-2. Wraps the sbatch script body with a SIGUSR1 trap that calls `sbatch "$0"` to resubmit itself.
-3. The friendly name (`dev-pool`) stays stable across resubmits; the SLURM `job_id` changes.
-
-To pick up the new `job_id` after a resubmit:
-
-```python
-res = Reservation.get("dev-pool")
-res.refresh()                                 # squeue --user --name=dev-pool
-res.exec("...")                               # uses the new job_id
-```
-
-This is SLURM's documented signaling mechanism — not a custom daemon.
-Compatible with HPC policies that ban persistent user-space daemons.
+</details>
 
 ## Defaults & overrides
 
@@ -128,12 +114,39 @@ Every `JobConfig` field has a `SCITEX_HPC_*` env-var override:
 
 Resolution priority: explicit `JobConfig` field → env var → built-in default.
 
-## Status
+## Walltime auto-resubmit (`persistent=True`)
 
-Standalone module from the SciTeX ecosystem. Public API surfaces in
-`scitex.hpc` (via the umbrella package's `sys.modules` alias) so you can
-write `from scitex.hpc import srun` from any consumer.
+When `persistent=True`, scitex-hpc:
 
-## License
+1. Adds `#SBATCH --signal=B:USR1@3600` so SLURM signals the script 1 h before walltime.
+2. Wraps the sbatch body with a SIGUSR1 trap that calls `sbatch "$0"` to resubmit itself.
+3. The friendly name (`dev-pool`) stays stable across resubmits; the SLURM `job_id` changes.
 
-AGPL-3.0-only.
+```python
+res = Reservation.get("dev-pool")
+res.refresh()                       # squeue --user --name=dev-pool
+res.exec("...")                     # uses the new job_id
+```
+
+SLURM's documented signaling mechanism — no custom daemon. Compatible with HPC policies that ban persistent user-space daemons. SSH ControlMaster pooling on the calling host amortizes per-`exec()` handshake cost.
+
+## Part of SciTeX
+
+`scitex-hpc` is part of [**SciTeX**](https://scitex.ai). Install via
+the umbrella with `pip install scitex[hpc]` to use as
+`scitex.hpc` (Python) or `scitex hpc ...` (CLI).
+
+>Four Freedoms for Research
+>
+>0. The freedom to **run** your research anywhere — your machine, your terms.
+>1. The freedom to **study** how every step works — from raw data to final manuscript.
+>2. The freedom to **redistribute** your workflows, not just your papers.
+>3. The freedom to **modify** any module and share improvements with the community.
+>
+>AGPL-3.0 — because we believe research infrastructure deserves the same freedoms as the software it runs on.
+
+---
+
+<p align="center">
+  <a href="https://scitex.ai" target="_blank"><img src="docs/scitex-icon-navy-inverted.png" alt="SciTeX" width="40"/></a>
+</p>

@@ -19,3 +19,4 @@ htmlcov/
 logs/
 *.log
 .DS_Store
+docs/to_claude/
