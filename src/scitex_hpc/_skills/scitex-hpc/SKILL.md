@@ -24,50 +24,8 @@ compute — every command is wrapped in `srun`/`sbatch` via a login-shell SSH.
 | **One-shot dispatch** (`srun`/`sbatch`) | Run a script once, fetch results | `scitex_hpc.{srun,sbatch,sync,poll_job,fetch_result}` |
 | **Reservations** (book once, exec many) | Iteration loops; multi-agent fleets; jupyter-on-HPC | `scitex_hpc.Reservation` |
 
-## Reservations — the high-impact API
+## Sub-skills
 
-```python
-from scitex_hpc import JobConfig, Reservation
-
-# Once: book a 7-day allocation
-res = Reservation.book(
-    JobConfig(host="spartan", partition="cascade",
-              cpus=8, mem="32G", time="7-0", project="dev-pool"),
-    persistent=True,        # walltime auto-resubmit via SIGUSR1 trap
-    tmux_server="sac",      # bootstrap a long-lived tmux server
-)
-
-# Many times — no queue wait
-res.exec("hostname")
-res.exec(["python", "-m", "pytest", "-n", "8"])
-res.attach(cmd="bash")
-
-res = Reservation.get("dev-pool")    # state in ~/.scitex/hpc/leases/
-res.refresh()                        # picks up new job_id after walltime-resubmit
-res.release()
-```
-
-CLI mirror: `scitex-hpc reservations {book,list,exec,attach,release}`.
-
-## Reservation features (one-line summary)
-
-- **Walltime auto-resubmit** — `#SBATCH --signal=B:USR1@3600` traps and
-  re-`sbatch`'s in place; friendly name stable, only `job_id` changes.
-- **Tmux-server bootstrap** — sbatch script's PID 1 is `tmux -L <socket>`;
-  tenants attach via `tmux -L <socket> new-session -t _root` and survive
-  cgroup-kill that would otherwise hit `srun --overlap` sessions.
-- **Adopt-existing-jobid** — `Reservation.from_jobid(...)` lets consumers
-  who submit their own sbatch scripts gain the API surface without rebooking.
-
-## Compatibility
-
-- **No daemons** (per 2026-04-26 IT Security ruling) — never `crontab @reboot`,
-  `systemctl --user linger`, autossh, cloudflared. Bastion-initiated SSH only.
-- **Login-shell wrapping** — every remote command runs as `bash -lc '<cmd>'`
-  so SLURM's module system is on PATH.
-- State at `~/.scitex/hpc/leases/<host>-<name>.json`. Override via
-  `SCITEX_HPC_LEASE_DIR`.
-
-## See also
-
-- `scitex-agent-container` — `slurm-tenant` runtime consumes `Reservation`
+- [01_reservations-api.md](01_reservations-api.md) — full `Reservation` API + CLI
+- [02_reservation-features.md](02_reservation-features.md) — walltime auto-resubmit, tmux bootstrap, adopt-existing-jobid
+- [03_compatibility-policies.md](03_compatibility-policies.md) — no-daemon policy, login-shell wrapping, state files, empirical guarantees, source layout
