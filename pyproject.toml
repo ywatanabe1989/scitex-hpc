@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "PyYAML>=5.1",
+    "click>=8.0",
     "scitex-config>=0.3.0",
     "scitex-ssh>=1.0.0",
 ]

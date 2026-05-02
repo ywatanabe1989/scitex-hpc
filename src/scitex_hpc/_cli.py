@@ -1,125 +1,96 @@
 """scitex-hpc CLI — `scitex-hpc reservations <verb> ...`.
 
-Phase 1 surface: book, list, get, exec, attach, release. The CLI is a
-thin wrapper over :class:`scitex_hpc.Reservation`; everything it does is
-also available as a Python API.
+Click-based CLI satisfying the SciTeX universal-flag contract:
 
-Future phases will add:
-- ``reservations renew`` — extend a persistent lease (Phase 2)
-- ``reservations migrate`` — adopt an existing SLURM job into a lease
+* top-level: ``-V/--version``, ``-h/--help``, ``--help-recursive``, ``--json``
+* ``mcp list-tools`` and ``list-python-apis`` introspection commands
+* config-path fallback documented in root help
 
-CLI is implemented with argparse to avoid pulling in click as a runtime
-dependency; sibling packages can use whichever they like.
+Subcommand surface:
+    reservations book / list / get / exec / refresh / attach / cancel
+
+``cancel`` is the canonical verb for tearing down a reservation
+(``scancel`` + lease cleanup); the legacy ``release`` spelling is kept
+as a hidden alias for one minor-version cycle.
 """
 
 from __future__ import annotations
 
-import argparse
-import json
+import json as _json
 import sys
 from typing import Sequence
+
+import click
 
 from . import __version__
 from ._config import JobConfig
 from ._reservation import Reservation
 
-
-def _book(args: argparse.Namespace) -> int:
-    cfg = JobConfig(
-        project=args.name,
-        host=args.host,
-        partition=args.partition,
-        cpus=args.cpus,
-        time=args.time,
-        mem=args.mem,
-        job_name=args.name,
-    )
-    res = Reservation.book(
-        cfg,
-        persistent=args.persistent,
-        hold_body=args.hold_body,
-        tmux_server=args.tmux_server,
-        poll_timeout=args.poll_timeout,
-        poll_interval=args.poll_interval,
-    )
-    if args.json:
-        print(json.dumps(_serialize(res), indent=2))
-    else:
-        print(f"booked: id={res.id} job={res.job_id} node={res.node}")
-    return 0
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
 
-def _list(args: argparse.Namespace) -> int:
-    rows = Reservation.list()
-    if args.json:
-        print(json.dumps([_serialize(r) for r in rows], indent=2))
-        return 0
-    if not rows:
-        print("(no reservations)")
-        return 0
-    fmt = "{:32}  {:10}  {:14}  {:30}"
-    print(fmt.format("ID", "JOB", "PERSIST", "NODE"))
-    for r in rows:
-        print(
-            fmt.format(r.id, r.job_id, "yes" if r.persistent else "no", r.node or "-")
-        )
-    return 0
+COMMAND_CATEGORIES = [
+    ("Reservations", ["reservations"]),
+    ("Introspection", ["list-python-apis", "mcp"]),
+]
 
 
-def _get(args: argparse.Namespace) -> int:
-    res = Reservation.get(args.name, host=args.host)
-    if res is None:
-        print(f"(no reservation named {args.name!r})", file=sys.stderr)
-        return 2
-    print(json.dumps(_serialize(res), indent=2))
-    return 0
+class CategorizedGroup(click.Group):
+    """Click.Group that groups commands into named sections in --help."""
+
+    def format_commands(self, ctx, formatter):
+        commands = {}
+        for name in self.list_commands(ctx):
+            cmd = self.get_command(ctx, name)
+            if cmd is not None and not cmd.hidden:
+                commands[name] = cmd
+        if not commands:
+            return
+        displayed = set()
+        for category_name, category_commands in COMMAND_CATEGORIES:
+            items = []
+            for name in category_commands:
+                if name in commands and name not in displayed:
+                    cmd = commands[name]
+                    items.append((name, cmd.get_short_help_str(limit=formatter.width)))
+                    displayed.add(name)
+            if items:
+                with formatter.section(category_name):
+                    formatter.write_dl(items)
+        leftover = [
+            (n, commands[n].get_short_help_str(limit=formatter.width))
+            for n in sorted(commands.keys())
+            if n not in displayed
+        ]
+        if leftover:
+            with formatter.section("Other"):
+                formatter.write_dl(leftover)
 
 
-def _exec(args: argparse.Namespace) -> int:
-    res = Reservation.require(args.name, host=args.host)
-    out = res.exec(args.command)
-    sys.stdout.write(out.stdout or "")
-    sys.stderr.write(out.stderr or "")
-    return out.returncode
-
-
-def _attach(args: argparse.Namespace) -> int:
-    res = Reservation.require(args.name, host=args.host)
-    return res.attach(cmd=args.shell, pty=True)
-
-
-def _refresh(args: argparse.Namespace) -> int:
-    """Re-discover the current job_id via squeue --user --name=<friendly>.
-
-    Useful after a walltime auto-resubmit (persistent=True): the SLURM
-    job_id changes but the friendly name stays stable. The cached
-    ``job_id`` in the lease file becomes stale until refreshed.
-    """
-    res = Reservation.require(args.name, host=args.host)
-    res.refresh()
-    if args.json:
-        print(json.dumps(_serialize(res), indent=2))
-    else:
-        if res.job_id:
-            print(f"refreshed: id={res.id} job={res.job_id} node={res.node}")
-        else:
-            print(
-                f"refreshed: id={res.id} (no live job found via "
-                f"squeue --name={res.name})",
-                file=sys.stderr,
-            )
-            return 2
-    return 0
-
-
-def _release(args: argparse.Namespace) -> int:
-    res = Reservation.get(args.name, host=args.host)
-    if res is None:
-        print(f"(no reservation named {args.name!r})", file=sys.stderr)
-        return 0 if args.missing_ok else 2
-    ok = res.release(missing_ok=True)
-    print(f"released: {res.id} ({'ok' if ok else 'scancel-failed'})")
-    return 0 if ok else 1
+def _show_recursive_help(ctx: click.Context) -> None:
+    click.echo(ctx.get_help())
+    click.echo()
+    group = ctx.command
+    if isinstance(group, click.Group):
+        for name in sorted(group.list_commands(ctx)):
+            cmd = group.get_command(ctx, name)
+            sub_ctx = click.Context(cmd, parent=ctx, info_name=name)
+            click.echo("=" * 60)
+            click.echo(f"Command: {name}")
+            click.echo("=" * 60)
+            click.echo(sub_ctx.get_help())
+            click.echo()
+            if isinstance(cmd, click.Group):
+                for sub_name in sorted(cmd.list_commands(sub_ctx)):
+                    sub_cmd = cmd.get_command(sub_ctx, sub_name)
+                    sub_sub_ctx = click.Context(
+                        sub_cmd, parent=sub_ctx, info_name=sub_name
+                    )
+                    click.echo("  " + "-" * 56)
+                    click.echo(f"  Subcommand: {name} {sub_name}")
+                    click.echo("  " + "-" * 56)
+                    click.echo(sub_sub_ctx.get_help())
+                    click.echo()
 
 
 def _serialize(res: Reservation) -> dict:
@@ -136,106 +107,388 @@ def _serialize(res: Reservation) -> dict:
     }
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="scitex-hpc",
-        description="Generic SLURM dispatch + reservations.",
+@click.group(
+    cls=CategorizedGroup,
+    invoke_without_command=True,
+    context_settings=CONTEXT_SETTINGS,
+)
+@click.version_option(__version__, "-V", "--version", prog_name="scitex-hpc")
+@click.help_option("-h", "--help")
+@click.option(
+    "--help-recursive",
+    is_flag=True,
+    help="Show help for all commands recursively.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit structured JSON output (propagates to subcommands that honour it).",
+)
+@click.pass_context
+def cli(ctx: click.Context, help_recursive: bool, as_json: bool) -> None:
+    """scitex-hpc - Generic SLURM dispatch + persistent reservations.
+
+    \b
+    Config is loaded with the SciTeX precedence chain:
+      config.yaml -> $SCITEX_HPC_CONFIG -> ~/.scitex/hpc/config.yaml -> defaults
+    """
+    ctx.ensure_object(dict)
+    ctx.obj["as_json"] = as_json
+    if help_recursive:
+        _show_recursive_help(ctx)
+        ctx.exit(0)
+    if ctx.invoked_subcommand is None:
+        click.echo(ctx.get_help())
+
+
+# ---------------------------------------------------------------- reservations
+
+
+@cli.group("reservations")
+def reservations() -> None:
+    """Persistent SLURM allocations (book once, exec many)."""
+
+
+@reservations.command("book")
+@click.argument("name")
+@click.option("--host", required=True, help="SSH host (e.g. spartan).")
+@click.option("--partition", default=None)
+@click.option("--cpus", type=int, default=None)
+@click.option("--time", "time_", default=None, help="walltime, e.g. 7-0 or 01:00:00")
+@click.option("--mem", default=None)
+@click.option(
+    "--persistent",
+    is_flag=True,
+    help="walltime auto-resubmit via SIGUSR1 (Phase 2).",
+)
+@click.option(
+    "--hold-body",
+    default=None,
+    help="Custom sbatch script body (default: tail -f /dev/null).",
+)
+@click.option(
+    "--tmux-server",
+    default=None,
+    metavar="SOCKET",
+    help=(
+        "Bootstrap a long-lived tmux server with this socket name as the "
+        "job's PID 1. Required for scitex-agent-container's slurm-tenant "
+        "runtime (Phase 4). Example: --tmux-server sac"
+    ),
+)
+@click.option("--poll-timeout", type=float, default=300.0)
+@click.option("--poll-interval", type=float, default=2.0)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON output.")
+def book_cmd(
+    name,
+    host,
+    partition,
+    cpus,
+    time_,
+    mem,
+    persistent,
+    hold_body,
+    tmux_server,
+    poll_timeout,
+    poll_interval,
+    as_json,
+):
+    """Submit a hold-job and wait for SLURM allocation.
+
+    \b
+    Example:
+      $ scitex-hpc reservations book dev-pool --host spartan --cpus 8 --mem 32G --time 7-0 --persistent
+    """
+    cfg = JobConfig(
+        project=name,
+        host=host,
+        partition=partition,
+        cpus=cpus,
+        time=time_,
+        mem=mem,
+        job_name=name,
     )
-    p.add_argument("--version", action="version", version=f"scitex-hpc {__version__}")
-    sub = p.add_subparsers(dest="group", required=True)
-
-    res = sub.add_parser("reservations", help="Persistent SLURM allocations")
-    res_sub = res.add_subparsers(dest="verb", required=True)
-
-    # book
-    pb = res_sub.add_parser("book", help="Submit a hold-job and wait for allocation")
-    pb.add_argument("name", help="Friendly lease name (e.g. dev-pool)")
-    pb.add_argument("--host", required=True, help="SSH host (e.g. spartan)")
-    pb.add_argument("--partition", default=None)
-    pb.add_argument("--cpus", type=int, default=None)
-    pb.add_argument("--time", default=None, help="walltime, e.g. 7-0 or 01:00:00")
-    pb.add_argument("--mem", default=None)
-    pb.add_argument(
-        "--persistent", action="store_true", help="walltime auto-resubmit (Phase 2)"
+    res = Reservation.book(
+        cfg,
+        persistent=persistent,
+        hold_body=hold_body,
+        tmux_server=tmux_server,
+        poll_timeout=poll_timeout,
+        poll_interval=poll_interval,
     )
-    pb.add_argument(
-        "--hold-body",
-        default=None,
-        help="Custom sbatch script body (default: tail -f /dev/null)",
-    )
-    pb.add_argument(
-        "--tmux-server",
-        default=None,
-        metavar="SOCKET",
-        help=(
-            "Bootstrap a long-lived tmux server with this socket name as "
-            "the job's PID 1. Required for scitex-agent-container's "
-            "slurm-tenant runtime (Phase 4). Example: --tmux-server sac"
-        ),
-    )
-    pb.add_argument("--poll-timeout", type=float, default=300.0)
-    pb.add_argument("--poll-interval", type=float, default=2.0)
-    pb.add_argument("--json", action="store_true")
-    pb.set_defaults(func=_book)
+    if as_json:
+        click.echo(_json.dumps(_serialize(res), indent=2))
+    else:
+        click.echo(f"booked: id={res.id} job={res.job_id} node={res.node}")
 
-    # list
-    pl = res_sub.add_parser("list", help="List active reservations")
-    pl.add_argument("--json", action="store_true")
-    pl.set_defaults(func=_list)
 
-    # get
-    pg = res_sub.add_parser("get", help="Show one reservation as JSON")
-    pg.add_argument("name")
-    pg.add_argument("--host", default=None)
-    pg.set_defaults(func=_get)
+@reservations.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON output.")
+def list_cmd(as_json):
+    """List active reservations.
 
-    # exec
-    pe = res_sub.add_parser("exec", help="Run a command inside the allocation")
-    pe.add_argument("name")
-    pe.add_argument("command")
-    pe.add_argument("--host", default=None)
-    pe.set_defaults(func=_exec)
+    \b
+    Example:
+      $ scitex-hpc reservations list
+      $ scitex-hpc reservations list --json
+    """
+    rows = Reservation.list()
+    if as_json:
+        click.echo(_json.dumps([_serialize(r) for r in rows], indent=2))
+        return
+    if not rows:
+        click.echo("(no reservations)")
+        return
+    fmt = "{:32}  {:10}  {:14}  {:30}"
+    click.echo(fmt.format("ID", "JOB", "PERSIST", "NODE"))
+    for r in rows:
+        click.echo(
+            fmt.format(r.id, r.job_id, "yes" if r.persistent else "no", r.node or "-")
+        )
 
-    # refresh
-    pr = res_sub.add_parser(
-        "refresh",
-        help=(
-            "Re-discover the current job_id via squeue (after walltime auto-resubmit)"
-        ),
-    )
-    pr.add_argument("name")
-    pr.add_argument("--host", default=None)
-    pr.add_argument("--json", action="store_true")
-    pr.set_defaults(func=_refresh)
 
-    # attach
-    pa = res_sub.add_parser(
-        "attach", help="Open an interactive shell on the compute node"
-    )
-    pa.add_argument("name")
-    pa.add_argument("--host", default=None)
-    pa.add_argument("--shell", default="bash")
-    pa.set_defaults(func=_attach)
+@reservations.command("get")
+@click.argument("name")
+@click.option("--host", default=None)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON output.")
+@click.pass_context
+def get_cmd(ctx, name, host, as_json):
+    """Show one reservation as JSON.
 
-    # release
-    pr = res_sub.add_parser("release", help="scancel + clear lease state")
-    pr.add_argument("name")
-    pr.add_argument("--host", default=None)
-    pr.add_argument(
-        "--missing-ok",
-        action="store_true",
-        default=True,
-        help="Exit 0 if the lease is already gone (default)",
-    )
-    pr.set_defaults(func=_release)
+    \b
+    Example:
+      $ scitex-hpc reservations get dev-pool
+      $ scitex-hpc reservations get dev-pool --json
+    """
+    res = Reservation.get(name, host=host)
+    if res is None:
+        click.echo(f"(no reservation named {name!r})", err=True)
+        ctx.exit(2)
+    click.echo(_json.dumps(_serialize(res), indent=2))
 
-    return p
+
+@reservations.command(
+    "exec",
+    context_settings={"ignore_unknown_options": True, "allow_interspersed_args": False},
+)
+@click.argument("name")
+@click.argument("command")
+@click.option("--host", default=None)
+@click.pass_context
+def exec_cmd(ctx, name, command, host):
+    """Run a command inside the reservation's allocation.
+
+    \b
+    Example:
+      $ scitex-hpc reservations exec dev-pool 'hostname'
+      $ scitex-hpc reservations exec dev-pool 'python -m pytest'
+    """
+    res = Reservation.require(name, host=host)
+    out = res.exec(command)
+    sys.stdout.write(out.stdout or "")
+    sys.stderr.write(out.stderr or "")
+    ctx.exit(out.returncode)
+
+
+@reservations.command("refresh")
+@click.argument("name")
+@click.option("--host", default=None)
+@click.option("--json", "as_json", is_flag=True, help="Emit JSON output.")
+@click.pass_context
+def refresh_cmd(ctx, name, host, as_json):
+    """Re-discover the current job_id via squeue (after walltime auto-resubmit).
+
+    Useful for ``persistent=True`` leases: SLURM's ``job_id`` changes on
+    auto-resubmit but the friendly name stays stable.
+
+    \b
+    Example:
+      $ scitex-hpc reservations refresh dev-pool
+      $ scitex-hpc reservations refresh dev-pool --json
+    """
+    res = Reservation.require(name, host=host)
+    res.refresh()
+    if as_json:
+        click.echo(_json.dumps(_serialize(res), indent=2))
+        return
+    if res.job_id:
+        click.echo(f"refreshed: id={res.id} job={res.job_id} node={res.node}")
+    else:
+        click.echo(
+            f"refreshed: id={res.id} (no live job found via squeue --name={res.name})",
+            err=True,
+        )
+        ctx.exit(2)
+
+
+@reservations.command("attach")
+@click.argument("name")
+@click.option("--host", default=None)
+@click.option("--shell", default="bash")
+@click.pass_context
+def attach_cmd(ctx, name, host, shell):
+    """Open an interactive shell on the reservation's compute node.
+
+    \b
+    Example:
+      $ scitex-hpc reservations attach dev-pool
+      $ scitex-hpc reservations attach dev-pool --shell zsh
+    """
+    res = Reservation.require(name, host=host)
+    rc = res.attach(cmd=shell, pty=True)
+    ctx.exit(rc)
+
+
+def _do_cancel(name, host, missing_ok, ctx):
+    res = Reservation.get(name, host=host)
+    if res is None:
+        click.echo(f"(no reservation named {name!r})", err=True)
+        ctx.exit(0 if missing_ok else 2)
+    ok = res.release(missing_ok=True)
+    click.echo(f"released: {res.id} ({'ok' if ok else 'scancel-failed'})")
+    ctx.exit(0 if ok else 1)
+
+
+@reservations.command("cancel")
+@click.argument("name")
+@click.option("--host", default=None)
+@click.option(
+    "--missing-ok/--no-missing-ok",
+    default=True,
+    help="Exit 0 if the lease is already gone (default).",
+)
+@click.pass_context
+def cancel_cmd(ctx, name, host, missing_ok):
+    """scancel + clear lease state for a reservation.
+
+    \b
+    Example:
+      $ scitex-hpc reservations cancel dev-pool
+      $ scitex-hpc reservations cancel dev-pool --no-missing-ok
+    """
+    _do_cancel(name, host, missing_ok, ctx)
+
+
+@reservations.command("release", hidden=True)
+@click.argument("name")
+@click.option("--host", default=None)
+@click.option("--missing-ok/--no-missing-ok", default=True)
+@click.pass_context
+def release_cmd(ctx, name, host, missing_ok):
+    """(deprecated alias) Use ``reservations cancel`` instead."""
+    _do_cancel(name, host, missing_ok, ctx)
+
+
+# ---------------------------------------------------- introspection commands
+
+
+@cli.command("list-python-apis")
+@click.option("-v", "--verbose", count=True, help="Verbosity (-v, -vv).")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def list_python_apis(verbose, as_json):
+    """List public Python API symbols of scitex_hpc.
+
+    \b
+    Example:
+      $ scitex-hpc list-python-apis
+      $ scitex-hpc list-python-apis --json
+    """
+    apis = [
+        ("JobConfig", "Cluster-agnostic SLURM job configuration."),
+        ("Reservation", "Persistent SLURM allocation handle."),
+        ("srun", "Blocking interactive srun dispatch."),
+        ("sbatch", "Async sbatch submission; returns job_id."),
+        ("sync", "rsync local sources to the cluster."),
+        ("poll_job", "Check sacct status for a job_id."),
+        ("fetch_result", "scp the .out file of a finished sbatch job."),
+    ]
+    if as_json:
+        click.echo(
+            _json.dumps(
+                {
+                    "module": "scitex_hpc",
+                    "apis": [{"name": n, "description": d} for n, d in apis],
+                },
+                indent=2,
+            )
+        )
+        return
+    click.echo("scitex_hpc Python API:")
+    click.echo()
+    for name, desc in apis:
+        if verbose >= 1:
+            click.echo(f"  {name:16s} {desc}")
+        else:
+            click.echo(f"  {name}")
+
+
+@cli.group("mcp")
+def mcp_group():
+    """MCP (Model Context Protocol) server commands."""
+
+
+@mcp_group.command("list-tools")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON.")
+def mcp_list_tools(as_json):
+    """List MCP tools exposed by scitex-hpc (none in current release).
+
+    \b
+    Example:
+      $ scitex-hpc mcp list-tools
+      $ scitex-hpc mcp list-tools --json
+    """
+    tools: list[tuple[str, str]] = []
+    if as_json:
+        click.echo(
+            _json.dumps(
+                {
+                    "total": len(tools),
+                    "tools": [{"name": n, "description": d} for n, d in tools],
+                },
+                indent=2,
+            )
+        )
+        return
+    if not tools:
+        click.echo("(no MCP tools registered)")
+        return
+    for name, desc in tools:
+        click.echo(f"  {name:20s} {desc}")
+
+
+# ----------------------------------------------------- argv-style entry point
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = _build_parser()
-    args = parser.parse_args(argv)
-    return args.func(args)
+    """Argv-style entry point.
+
+    Kept for backward compatibility with ``main([...])`` tests and with the
+    ``[project.scripts]`` installer hook. Delegates to the Click ``cli``
+    group with ``standalone_mode=False`` so Click's ``SystemExit`` is
+    surfaced as a return code instead of terminating the interpreter.
+    """
+    try:
+        result = cli.main(
+            args=list(argv) if argv is not None else None,
+            prog_name="scitex-hpc",
+            standalone_mode=False,
+        )
+    except SystemExit as e:
+        code = e.code
+        if code is None:
+            return 0
+        if isinstance(code, int):
+            return code
+        return 1
+    except click.exceptions.Exit as e:
+        return int(e.exit_code)
+    except click.ClickException as e:
+        e.show()
+        return e.exit_code
+    if isinstance(result, int):
+        return result
+    return 0
 
 
 if __name__ == "__main__":  # pragma: no cover
