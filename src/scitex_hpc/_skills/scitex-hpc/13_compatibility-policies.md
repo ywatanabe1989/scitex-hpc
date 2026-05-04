@@ -1,7 +1,10 @@
 ---
-name: hpc-compatibility-policies
-description: HPC compatibility — no-daemon policies, login-shell wrapping, state file layout, empirical guarantees from live Spartan verification, and source layout.
-tags: [scitex-hpc, scitex-package]
+description: |
+  [TOPIC] Compatibility Policies
+  [DETAILS] HPC compatibility — no-daemon policies, login-shell wrapping,
+  state file layout, empirical guarantees from live Spartan verification, and
+  source layout.
+tags: [scitex-hpc-compatibility-policies, scitex-hpc, scitex-package]
 ---
 
 # Compatibility & policies

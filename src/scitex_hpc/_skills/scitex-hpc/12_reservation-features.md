@@ -1,7 +1,8 @@
 ---
-name: hpc-reservation-features
-description: Three reservation features that change the shape of HPC work — walltime auto-resubmit (SIGUSR1 trap), tmux-server bootstrap (PID 1 of sbatch), adopt-existing-jobid for consumers with custom sbatch hardeners.
-tags: [scitex-hpc, scitex-package]
+description: |
+  [TOPIC] Reservation Features
+  [DETAILS] Three reservation features that change the shape of HPC work — walltime auto-resubmit (SIGUSR1 trap), tmux-server bootstrap (PID 1 of sbatch), adopt-existing-jobid for consumers with custom sbatch hardeners.
+tags: [scitex-hpc-reservation-features, scitex-hpc, scitex-package]
 ---
 
 # Three reservation features that change the shape of HPC work

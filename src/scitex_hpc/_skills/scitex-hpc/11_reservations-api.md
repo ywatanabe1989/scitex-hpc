@@ -1,7 +1,8 @@
 ---
-name: hpc-reservations-api
-description: Reservation primitive — book a SLURM allocation once, run many short commands inside via srun --jobid --overlap. Cuts queue wait from minutes to one ssh round-trip per command.
-tags: [scitex-hpc, scitex-package]
+description: |
+  [TOPIC] Reservations API
+  [DETAILS] Reservation primitive — book a SLURM allocation once, run many short commands inside via srun --jobid --overlap. Cuts queue wait from minutes to one ssh round-trip per command.
+tags: [scitex-hpc-reservations-api, scitex-hpc, scitex-package]
 ---
 
 # Reservations API

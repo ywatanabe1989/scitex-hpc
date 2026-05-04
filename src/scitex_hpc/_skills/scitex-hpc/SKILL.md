@@ -1,6 +1,16 @@
 ---
 name: scitex-hpc
-description: Generic SLURM dispatch + persistent reservations for the SciTeX ecosystem. One-shot `srun`/`sbatch`/`sync`/`poll`/`fetch_result` plus a `Reservation` primitive that lets you book a node once and run many short commands inside the allocation via `srun --jobid --overlap` — cuts queue wait from minutes to one ssh round-trip per command. Reservations support walltime auto-resubmit (SIGUSR1 trap) and tmux-server bootstrap (PID 1 of the sbatch script) so multi-tenant agent runtimes can attach long-lived sessions without cgroup-kill. Bastion-initiated SSH only — compatible with HPC policies that ban persistent daemons or outbound tunnels. Drop-in replacement for hand-rolled `ssh hpc 'sbatch ...'` scripts, per-experiment queue-wait penalties, and bespoke `sleep + scancel` watchdogs.
+description: |
+  [WHAT] Generic SLURM dispatch + persistent reservations for the SciTeX
+  ecosystem — one-shot `srun`/`sbatch`/`sync`/`poll`/`fetch_result` plus a
+  `Reservation` primitive that books a node once and runs many short commands
+  inside the allocation via `srun --jobid --overlap`, cutting queue wait from
+  minutes to one ssh round-trip per command.
+  [WHEN] Dispatching jobs to an HPC cluster from a laptop or login node —
+  especially when iterating in tight loops, running multi-agent fleets, or
+  doing jupyter-on-HPC where queue wait dominates wall time.
+  [HOW] `from scitex_hpc import srun, sbatch, Reservation`, or
+  `scitex-hpc <verb> ...`. Bastion-initiated SSH only; no persistent daemons.
 primary_interface: python
 interfaces:
   python: 3
@@ -9,7 +19,7 @@ interfaces:
   skills: 1
   hook: 0
   http: 0
-tags: [scitex-hpc, scitex-package]
+tags: [scitex-hpc]
 ---
 
 # scitex-hpc
@@ -26,6 +36,16 @@ compute — every command is wrapped in `srun`/`sbatch` via a login-shell SSH.
 
 ## Sub-skills
 
-- [01_reservations-api.md](01_reservations-api.md) — full `Reservation` API + CLI
-- [02_reservation-features.md](02_reservation-features.md) — walltime auto-resubmit, tmux bootstrap, adopt-existing-jobid
-- [03_compatibility-policies.md](03_compatibility-policies.md) — no-daemon policy, login-shell wrapping, state files, empirical guarantees, source layout
+### Core (01–09)
+- [01_installation.md](01_installation.md) — install + import sanity check
+- [02_quick-start.md](02_quick-start.md) — 30-second tour
+- [03_python-api.md](03_python-api.md) — Python API surface
+- [04_cli-reference.md](04_cli-reference.md) — CLI subcommands
+
+### Workflows (10–19)
+- [11_reservations-api.md](11_reservations-api.md) — full `Reservation` API + CLI
+- [12_reservation-features.md](12_reservation-features.md) — walltime auto-resubmit, tmux bootstrap, adopt-existing-jobid
+- [13_compatibility-policies.md](13_compatibility-policies.md) — no-daemon policy, login-shell wrapping, state files, empirical guarantees, source layout
+
+### Meta (20+)
+- [20_env-vars.md](20_env-vars.md) — Environment variables (`SCITEX_HPC_*`)
