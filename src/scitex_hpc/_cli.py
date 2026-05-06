@@ -568,6 +568,15 @@ def mcp_install(claude_code: bool):
     click.echo("3. Test:    scitex-hpc mcp doctor")
 
 
+# §1a: install-shell-completion + print-shell-completion (canonical leaves)
+try:
+    from scitex_dev._cli._completion import attach_shell_completion
+
+    attach_shell_completion(cli, prog_name="scitex-hpc")
+except ImportError:
+    pass
+
+
 # ----------------------------------------------------- argv-style entry point
 
 
