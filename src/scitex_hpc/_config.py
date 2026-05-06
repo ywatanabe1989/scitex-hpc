@@ -32,6 +32,12 @@ HPC_DEFAULTS: dict[str, Any] = {
     "mem": "8G",
     "remote_base": "~/proj",
     "python_bin": "python3",
+    # Optional scheduling pins. Empty string = "let SLURM pick" / "no
+    # pin". Listed here so the user-config cascade picks them up from
+    # ~/.scitex/hpc/config.yaml the same way as host/partition.
+    "nodelist": "",
+    "account": "",
+    "qos": "",
 }
 
 
