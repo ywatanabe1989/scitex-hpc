@@ -158,6 +158,28 @@ def reservations() -> None:
 @click.option("--time", "time_", default=None, help="walltime, e.g. 7-0 or 01:00:00")
 @click.option("--mem", default=None)
 @click.option(
+    "--nodelist",
+    default=None,
+    metavar="NODE",
+    help=(
+        "Pin the allocation to a specific node (e.g. spartan-bm198). "
+        "SLURM will wait for the named node to free up rather than "
+        "scheduling elsewhere. Useful when the operator needs to ssh "
+        "into a known node (pam_slurm_adopt) or land on a machine "
+        "with a specific hardware feature."
+    ),
+)
+@click.option(
+    "--account",
+    default=None,
+    help="SLURM account / project to bill (e.g. punim2354).",
+)
+@click.option(
+    "--qos",
+    default=None,
+    help="SLURM QOS tier (e.g. publiccpu).",
+)
+@click.option(
     "--persistent",
     is_flag=True,
     help="walltime auto-resubmit via SIGUSR1 (Phase 2).",
@@ -187,6 +209,9 @@ def book_cmd(
     cpus,
     time_,
     mem,
+    nodelist,
+    account,
+    qos,
     persistent,
     hold_body,
     tmux_server,
@@ -199,6 +224,7 @@ def book_cmd(
     \b
     Example:
       $ scitex-hpc reservations book dev-pool --host spartan --cpus 8 --mem 32G --time 7-0 --persistent
+      $ scitex-hpc reservations book bm198-smoke --host spartan --nodelist spartan-bm198 --time 1:00:00 --account punim2354
     """
     cfg = JobConfig(
         project=name,
@@ -207,6 +233,9 @@ def book_cmd(
         cpus=cpus,
         time=time_,
         mem=mem,
+        nodelist=nodelist,
+        account=account,
+        qos=qos,
         job_name=name,
     )
     res = Reservation.book(

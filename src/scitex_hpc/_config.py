@@ -114,6 +114,22 @@ class JobConfig:
     extra_srun_args: list[str] = field(default_factory=list)
     job_name: str | None = None
 
+    # SLURM scheduling pins. All three are optional; the cluster's
+    # defaults apply when unset.
+    #
+    # ``nodelist``    pins the allocation to a specific node — e.g.
+    #                 ``spartan-bm198``. Useful when the operator needs
+    #                 to land work on a node they can already ssh into,
+    #                 or one with a specific hardware feature (GPU, big
+    #                 RAM). When ``nodelist`` is set the scheduler will
+    #                 wait until that node has free resources rather
+    #                 than picking another.
+    # ``account``     SLURM account / project to bill (Spartan: punim2354).
+    # ``qos``         quality-of-service tier (Spartan: publiccpu, etc.).
+    nodelist: str | None = None
+    account: str | None = None
+    qos: str | None = None
+
     def resolve(self, key: str) -> str:
         """Resolve a single field via direct → env → user-config → default."""
         direct = getattr(self, key, None)
@@ -130,7 +146,9 @@ class JobConfig:
 
     def slurm_args(self) -> list[str]:
         """Return standard Slurm flags. Empty partition is omitted so the
-        cluster's site-default partition applies."""
+        cluster's site-default partition applies. ``nodelist`` /
+        ``account`` / ``qos`` are emitted only when set (cluster defaults
+        otherwise apply)."""
         args = [
             f"--cpus-per-task={self.resolve('cpus')}",
             f"--time={self.resolve('time')}",
@@ -139,6 +157,13 @@ class JobConfig:
         partition = self.resolve("partition")
         if partition:
             args.insert(0, f"--partition={partition}")
+        # Optional scheduling pins.
+        for key in ("nodelist", "account", "qos"):
+            val = getattr(self, key, None)
+            if val:
+                # SLURM accepts either form; the long form is most
+                # readable in scontrol output.
+                args.append(f"--{key}={val}")
         name = self.job_name or f"scitex-{self.project}"
         args.append(f"--job-name={name}")
         return args
