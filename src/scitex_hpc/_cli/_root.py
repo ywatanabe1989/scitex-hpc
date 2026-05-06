@@ -166,5 +166,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
+# audit §4 — inject version into root --help (cli is the click Group;
+# `main` here is a thin argv wrapper, so attach to cli.help).
+try:
+    from importlib.metadata import version as _v
+
+    cli.help = f"scitex-hpc (v{_v('scitex-hpc')}) — " + (cli.help or "").lstrip()
+except Exception:
+    pass
+
+
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
