@@ -195,10 +195,11 @@ class TestBook:
         with pytest.raises(ValueError, match="host is required"):
             Reservation.book(JobConfig(project="x"))
 
-    def test_book_cancels_job_when_allocation_times_out(self, lease_dir, monkeypatch):
-        """Regression: book() must scancel the submitted job if it never
-        reaches RUNNING. The 2026-04-28 incident saw a 5-minute orphan job
-        because we previously raised before cleanup."""
+    def test_book_keeps_queued_job_on_poll_timeout(self, lease_dir, monkeypatch):
+        """``book`` must NEVER scancel on poll timeout — reservations are
+        intentionally long-lived blockers, and an auto-cancel undoes the
+        operator's queue position. Lease must be saved so the user can
+        ``refresh`` later when SLURM eventually schedules the job."""
         cfg = JobConfig(project="dev-pool", host="spartan")
         captured = []
 
@@ -209,8 +210,6 @@ class TestBook:
                 return _proc(stdout="Submitted batch job 9999\n")
             if "squeue" in cmd:
                 return _proc(stdout="PENDING \n")
-            if "scancel" in cmd:
-                return _proc()
             return _proc()
 
         monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
@@ -218,15 +217,14 @@ class TestBook:
         clock = iter([0.0, 0.5, 1.5, 2.5, 3.5])
         monkeypatch.setattr(resmod.time, "monotonic", lambda: next(clock))
 
-        with pytest.raises(TimeoutError):
-            Reservation.book(cfg, poll_timeout=2.0, poll_interval=0.1)
+        res = Reservation.book(cfg, poll_timeout=2.0, poll_interval=0.1)
 
-        # Must have called scancel on the orphan
-        assert any("scancel 9999" in c for c in captured), (
-            f"expected scancel cleanup; got: {captured}"
+        assert res.job_id == "9999"
+        assert res.node in (None, "")  # not yet allocated
+        assert not any("scancel" in c for c in captured), (
+            f"book must not scancel on poll timeout; got: {captured}"
         )
-        # And no state file was left behind
-        assert not (lease_dir / "spartan-dev-pool.json").exists()
+        assert (lease_dir / "spartan-dev-pool.json").exists()
 
     def test_book_uses_custom_hold_body(self, lease_dir, monkeypatch):
         """``hold_body`` lets sac-style consumers inject tmux/claude bootstrap."""
@@ -245,7 +243,11 @@ class TestBook:
         Reservation.book(cfg, hold_body="echo bootstrapped && tail -f /dev/null")
         assert "echo bootstrapped" in captured[0][2]
 
-    def test_book_times_out_when_never_allocated(self, lease_dir, monkeypatch):
+    def test_book_returns_with_empty_node_when_poll_times_out(
+        self, lease_dir, monkeypatch
+    ):
+        """Poll timeout returns a Reservation with `node=None|''`; the SLURM
+        job stays queued. No exception, no scancel."""
         cfg = JobConfig(project="dev-pool", host="spartan")
 
         def fake_run(*args, **kwargs):
@@ -255,13 +257,12 @@ class TestBook:
 
         monkeypatch.setattr(sshmod.subprocess, "run", fake_run)
         monkeypatch.setattr(resmod.time, "sleep", lambda _: None)
-
-        # Drive monotonic forward fast so timeout fires
         clock = iter([0.0, 0.5, 1.5, 2.0, 3.0, 4.0, 5.0])
         monkeypatch.setattr(resmod.time, "monotonic", lambda: next(clock))
 
-        with pytest.raises(TimeoutError, match="did not reach RUNNING"):
-            Reservation.book(cfg, poll_timeout=2.0, poll_interval=0.1)
+        res = Reservation.book(cfg, poll_timeout=2.0, poll_interval=0.1)
+        assert res.job_id == "1"
+        assert res.node in (None, "")
 
     def test_book_raises_if_job_ends_during_wait(self, lease_dir, monkeypatch):
         cfg = JobConfig(project="dev-pool", host="spartan")

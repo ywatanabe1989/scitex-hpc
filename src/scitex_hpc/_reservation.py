@@ -409,23 +409,19 @@ class Reservation:
             persistent=persistent,
             extras=extras,
         )
-        # Defer save() until allocation is confirmed. If the job times out
-        # or fails, scancel and leave no orphan state file. (Leaking SLURM
-        # jobs is what created a runaway 5-minute test cost on 2026-04-28.)
+        # Save the lease immediately so the SLURM job is recoverable even
+        # if poll-for-allocation times out. Reservations are intentionally
+        # long-lived blockers (tail -f /dev/null) — auto-scancelling on
+        # poll timeout defeats the entire pattern. Run `reservations
+        # refresh <name>` later to fill in the node once SLURM schedules it.
+        res.save()
         try:
             res._wait_for_allocation(poll_interval=poll_interval, timeout=poll_timeout)
-        except BaseException:
-            # Best-effort cleanup of the SLURM job; raise the original error.
-            try:
-                exec_remote(
-                    host,
-                    _wrap_in_login_shell(f"scancel {job_id}"),
-                    timeout=30,
-                )
-            except Exception:  # pragma: no cover — defensive
-                pass
-            raise
-        res.save()
+        except TimeoutError:
+            # Job is still queued; lease persists with empty `node`. User
+            # can `reservations refresh` once SLURM schedules it. Never
+            # scancel here.
+            pass
         return res
 
     def _wait_for_allocation(self, *, poll_interval: float, timeout: float) -> None:

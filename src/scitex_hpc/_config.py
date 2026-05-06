@@ -38,6 +38,7 @@ HPC_DEFAULTS: dict[str, Any] = {
     "nodelist": "",
     "account": "",
     "qos": "",
+    "gpus": "",
 }
 
 
@@ -136,6 +137,11 @@ class JobConfig:
     account: str | None = None
     qos: str | None = None
 
+    # GPU request. Pass-through to SLURM's ``--gpus=<spec>`` flag.
+    # Examples: ``"1"`` (any 1 GPU), ``"a100:2"`` (two A100s),
+    # ``"gpu:h100:4"``. Empty / None = CPU-only allocation.
+    gpus: str | None = None
+
     def resolve(self, key: str) -> str:
         """Resolve a single field via direct → env → user-config → default."""
         direct = getattr(self, key, None)
@@ -170,6 +176,9 @@ class JobConfig:
                 # SLURM accepts either form; the long form is most
                 # readable in scontrol output.
                 args.append(f"--{key}={val}")
+        gpus = self.resolve("gpus")
+        if gpus:
+            args.append(f"--gpus={gpus}")
         name = self.job_name or f"scitex-{self.project}"
         args.append(f"--job-name={name}")
         return args

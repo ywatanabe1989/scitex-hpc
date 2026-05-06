@@ -67,6 +67,16 @@ def reservations() -> None:
 )
 @click.option("--qos", default=None, help="SLURM QOS tier (e.g. publiccpu).")
 @click.option(
+    "--gpus",
+    default=None,
+    metavar="SPEC",
+    help=(
+        "Request GPUs. Pass-through to SLURM's --gpus=<SPEC>. "
+        "Examples: '1' (any 1 GPU), 'a100:2' (two A100s), 'h100:4'. "
+        "Omit for CPU-only allocations."
+    ),
+)
+@click.option(
     "--persistent",
     is_flag=True,
     help="walltime auto-resubmit via SIGUSR1 (Phase 2).",
@@ -101,6 +111,7 @@ def book_cmd(
     nodelist,
     account,
     qos,
+    gpus,
     persistent,
     hold_body,
     tmux_server,
@@ -128,6 +139,7 @@ def book_cmd(
         nodelist=nodelist,
         account=account,
         qos=qos,
+        gpus=gpus,
         job_name=name,
     )
     if dry_run:
@@ -142,6 +154,7 @@ def book_cmd(
                 "nodelist": cfg.nodelist,
                 "account": cfg.account,
                 "qos": cfg.qos,
+                "gpus": cfg.gpus,
             },
             "persistent": persistent,
             "tmux_server": tmux_server,
