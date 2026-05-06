@@ -152,7 +152,16 @@ def reservations() -> None:
 
 @reservations.command("book")
 @click.argument("name")
-@click.option("--host", required=True, help="SSH host (e.g. spartan).")
+@click.option(
+    "--host",
+    default=None,
+    help=(
+        "SSH host to submit sbatch from (e.g. spartan). Optional — "
+        "falls back to $SCITEX_HPC_HOST or "
+        "~/.scitex/hpc/config.yaml's `host:` if unset, so an operator "
+        "with a single cluster doesn't need to pass this every time."
+    ),
+)
 @click.option("--partition", default=None)
 @click.option("--cpus", type=int, default=None)
 @click.option("--time", "time_", default=None, help="walltime, e.g. 7-0 or 01:00:00")
