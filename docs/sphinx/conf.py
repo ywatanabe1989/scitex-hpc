@@ -24,6 +24,7 @@ extensions = [
     "myst_parser",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
+    "sphinx_click",
 ]
 
 autodoc_default_options = {
