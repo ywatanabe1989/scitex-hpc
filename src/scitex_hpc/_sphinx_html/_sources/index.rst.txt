@@ -8,6 +8,7 @@ Generic SLURM dispatch (srun, sbatch, sync, poll, fetch) for the SciTeX ecosyste
    :caption: Contents:
 
    api
+   cli_reference
 
 Indices and tables
 ==================

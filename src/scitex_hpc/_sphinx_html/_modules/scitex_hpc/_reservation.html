@@ -45,6 +45,7 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cli_reference.html">CLI Reference</a></li>
 </ul>
 
         </div>
@@ -502,23 +503,19 @@
             <span class="n">persistent</span><span class="o">=</span><span class="n">persistent</span><span class="p">,</span>
             <span class="n">extras</span><span class="o">=</span><span class="n">extras</span><span class="p">,</span>
         <span class="p">)</span>
-        <span class="c1"># Defer save() until allocation is confirmed. If the job times out</span>
-        <span class="c1"># or fails, scancel and leave no orphan state file. (Leaking SLURM</span>
-        <span class="c1"># jobs is what created a runaway 5-minute test cost on 2026-04-28.)</span>
+        <span class="c1"># Save the lease immediately so the SLURM job is recoverable even</span>
+        <span class="c1"># if poll-for-allocation times out. Reservations are intentionally</span>
+        <span class="c1"># long-lived blockers (tail -f /dev/null) — auto-scancelling on</span>
+        <span class="c1"># poll timeout defeats the entire pattern. Run `reservations</span>
+        <span class="c1"># refresh &lt;name&gt;` later to fill in the node once SLURM schedules it.</span>
+        <span class="n">res</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
         <span class="k">try</span><span class="p">:</span>
             <span class="n">res</span><span class="o">.</span><span class="n">_wait_for_allocation</span><span class="p">(</span><span class="n">poll_interval</span><span class="o">=</span><span class="n">poll_interval</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="n">poll_timeout</span><span class="p">)</span>
-        <span class="k">except</span> <span class="ne">BaseException</span><span class="p">:</span>
-            <span class="c1"># Best-effort cleanup of the SLURM job; raise the original error.</span>
-            <span class="k">try</span><span class="p">:</span>
-                <span class="n">exec_remote</span><span class="p">(</span>
-                    <span class="n">host</span><span class="p">,</span>
-                    <span class="n">_wrap_in_login_shell</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;scancel </span><span class="si">{</span><span class="n">job_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">),</span>
-                    <span class="n">timeout</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
-                <span class="p">)</span>
-            <span class="k">except</span> <span class="ne">Exception</span><span class="p">:</span>  <span class="c1"># pragma: no cover — defensive</span>
-                <span class="k">pass</span>
-            <span class="k">raise</span>
-        <span class="n">res</span><span class="o">.</span><span class="n">save</span><span class="p">()</span>
+        <span class="k">except</span> <span class="ne">TimeoutError</span><span class="p">:</span>
+            <span class="c1"># Job is still queued; lease persists with empty `node`. User</span>
+            <span class="c1"># can `reservations refresh` once SLURM schedules it. Never</span>
+            <span class="c1"># scancel here.</span>
+            <span class="k">pass</span>
         <span class="k">return</span> <span class="n">res</span></div>
 
 
