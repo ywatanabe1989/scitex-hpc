@@ -497,7 +497,15 @@ def mcp_list_tools(as_json):
 
 @mcp_group.command("start")
 @click.option("--dry-run", is_flag=True, help="Print launch plan without starting.")
-def mcp_start(dry_run: bool):
+@click.option(
+    "-y",
+    "--yes",
+    "yes",
+    is_flag=True,
+    default=False,
+    help="Skip the (currently never-shown) confirm prompt; reserved for parity.",
+)
+def mcp_start(dry_run: bool, yes: bool):
     """Start the scitex-hpc MCP server.
 
     \b
@@ -505,6 +513,7 @@ def mcp_start(dry_run: bool):
       $ scitex-hpc mcp start
       $ scitex-hpc mcp start --dry-run
     """
+    del yes  # reserved
     if dry_run:
         click.echo("DRY RUN — would start scitex-hpc MCP server (stdio transport)")
         return
@@ -544,14 +553,30 @@ def mcp_doctor():
 
 @mcp_group.command("install")
 @click.option("--claude-code", is_flag=True, help="Show Claude Code config snippet.")
-def mcp_install(claude_code: bool):
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    default=False,
+    help="Print install plan without writing anything (no-op today; reserved).",
+)
+@click.option(
+    "-y",
+    "--yes",
+    "yes",
+    is_flag=True,
+    default=False,
+    help="Skip the (currently never-shown) confirm prompt; reserved for parity.",
+)
+def mcp_install(claude_code: bool, dry_run: bool, yes: bool):
     """Show MCP installation instructions.
 
     \b
     Example:
       $ scitex-hpc mcp install
       $ scitex-hpc mcp install --claude-code
+      $ scitex-hpc mcp install --dry-run
     """
+    del dry_run, yes  # `install` only prints today; flags reserved
     if claude_code:
         click.secho("Add to Claude Code MCP config:", fg="cyan")
         click.echo()
