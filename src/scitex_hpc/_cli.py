@@ -495,6 +495,79 @@ def mcp_list_tools(as_json):
         click.echo(f"  {name:20s} {desc}")
 
 
+@mcp_group.command("start")
+@click.option("--dry-run", is_flag=True, help="Print launch plan without starting.")
+def mcp_start(dry_run: bool):
+    """Start the scitex-hpc MCP server.
+
+    \b
+    Example:
+      $ scitex-hpc mcp start
+      $ scitex-hpc mcp start --dry-run
+    """
+    if dry_run:
+        click.echo("DRY RUN — would start scitex-hpc MCP server (stdio transport)")
+        return
+    click.secho(
+        "scitex-hpc does not currently expose an MCP server.\n"
+        "Run `scitex-hpc mcp list-tools` to see registered tools (none in this release).",
+        err=True,
+        fg="yellow",
+    )
+    raise SystemExit(2)
+
+
+@mcp_group.command("doctor")
+def mcp_doctor():
+    """Check MCP server dependencies.
+
+    \b
+    Example:
+      $ scitex-hpc mcp doctor
+    """
+    click.secho("Checking MCP dependencies...", fg="cyan")
+    try:
+        import fastmcp
+
+        click.secho("  OK ", fg="green", nl=False)
+        click.echo(f"fastmcp {fastmcp.__version__}")
+    except ImportError:
+        click.secho("  NG ", fg="red", nl=False)
+        click.echo("fastmcp not installed")
+        click.echo("     Install: pip install scitex-hpc[mcp]")
+        return
+    click.secho(
+        "\nNote: scitex-hpc does not currently register MCP tools.", fg="yellow"
+    )
+    click.echo("Run: scitex-hpc mcp list-tools")
+
+
+@mcp_group.command("install")
+@click.option("--claude-code", is_flag=True, help="Show Claude Code config snippet.")
+def mcp_install(claude_code: bool):
+    """Show MCP installation instructions.
+
+    \b
+    Example:
+      $ scitex-hpc mcp install
+      $ scitex-hpc mcp install --claude-code
+    """
+    if claude_code:
+        click.secho("Add to Claude Code MCP config:", fg="cyan")
+        click.echo()
+        click.echo('  "scitex-hpc": {')
+        click.echo('    "command": "scitex-hpc",')
+        click.echo('    "args": ["mcp", "start"]')
+        click.echo("  }")
+        return
+    click.secho("scitex-hpc MCP Server Installation", fg="cyan", bold=True)
+    click.echo("=" * 40)
+    click.echo()
+    click.echo("1. Install: pip install scitex-hpc[mcp]")
+    click.echo("2. Config:  scitex-hpc mcp install --claude-code")
+    click.echo("3. Test:    scitex-hpc mcp doctor")
+
+
 # ----------------------------------------------------- argv-style entry point
 
 
