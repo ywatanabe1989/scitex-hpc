@@ -36,6 +36,7 @@ docs = [
     "sphinx-copybutton>=0.5",
     "sphinx-autodoc-typehints>=1.25",
     "sphinx-click>=5.0",
+    "scitex-dev>=0.11.5",
 ]
 all = ["scitex-hpc[dev,mcp,docs]"]
 
