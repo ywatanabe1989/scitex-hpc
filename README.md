@@ -9,7 +9,7 @@
 <p align="center"><b>Generic SLURM dispatch — `srun` / `sbatch` / reservations / sync / poll / fetch — for any HPC cluster.</b></p>
 
 <p align="center">
-  <a href="https://scitex-hpc.readthedocs.io/">Full Documentation</a> · <code>pip install scitex-hpc</code>
+  <a href="https://scitex-hpc.readthedocs.io/">Full Documentation</a> · <code>uv pip install scitex-hpc[all]</code>
 </p>
 
 <!-- scitex-badges:start -->
