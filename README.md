@@ -39,6 +39,36 @@
 pip install scitex-hpc
 ```
 
+## Demo
+
+```bash
+# Submit + watch a SLURM job (via the local scheduler config)
+scitex-hpc submit-sbatch examples/00_minimal.sbatch
+scitex-hpc poll-job <jobid>
+scitex-hpc fetch-result <jobid> --out ./results/
+
+# Or interactive: book a chunk, attach, work
+scitex-hpc dispatch-srun --time 1:00:00 --gpus 1
+```
+
+```mermaid
+graph LR
+    Local["Local laptop\n(scitex-hpc CLI / Python API)"] -->|submit-sbatch| Login["HPC login node"]
+    Local -->|dispatch-srun| Login
+    Login -->|salloc/sbatch| Compute["Compute / GPU nodes"]
+    Compute -->|stdout/err + artefacts| Sync["sync-project rsync"]
+    Sync --> Local
+```
+
+## Architecture
+
+`scitex-hpc` is a thin client over the SLURM CLI (`squeue`, `sbatch`,
+`srun`, `salloc`). Site-specific config (partitions, default walltimes,
+module loads) lives in `~/.scitex/hpc/config.yaml`; nothing else is
+host-aware. Job-state caches and result rsync metadata sit under
+`~/.scitex/hpc/runtime/`. The package is fleet-agnostic: it does not
+know about scitex-orochi or any specific HPC site beyond its config.
+
 ## 1 Interfaces
 
 <details open>
