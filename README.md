@@ -63,11 +63,27 @@ graph LR
 ## Architecture
 
 `scitex-hpc` is a thin client over the SLURM CLI (`squeue`, `sbatch`,
-`srun`, `salloc`). Site-specific config (partitions, default walltimes,
-module loads) lives in `~/.scitex/hpc/config.yaml`; nothing else is
-host-aware. Job-state caches and result rsync metadata sit under
-`~/.scitex/hpc/runtime/`. The package is fleet-agnostic: it does not
-know about scitex-orochi or any specific HPC site beyond its config.
+`srun`, `salloc`). Site-specific config lives in
+`~/.scitex/hpc/config.yaml`; nothing else is host-aware. The package is
+fleet-agnostic: it does not know about scitex-orochi or any specific
+HPC site beyond its config.
+
+```
+scitex_hpc/
+├── _cli/                       ← `scitex-hpc` Click commands
+│   ├── submit_sbatch.py        ← submit-sbatch verb
+│   ├── dispatch_srun.py        ← dispatch-srun verb
+│   ├── poll_job.py             ← poll-job verb
+│   ├── fetch_result.py         ← fetch-result verb
+│   └── sync_project.py         ← sync-project verb
+├── _slurm/                     ← thin wrappers over squeue / sbatch / srun / salloc
+├── _state/                     ← job-state cache (`~/.scitex/hpc/runtime/`)
+└── config/                     ← YAML schema for site config
+
+~/.scitex/hpc/                  ← user state (gitignored, host-specific)
+├── config.yaml                 ← partitions, walltimes, module loads, GPU types
+└── runtime/                    ← per-job caches, result-rsync metadata
+```
 
 ## 1 Interfaces
 
