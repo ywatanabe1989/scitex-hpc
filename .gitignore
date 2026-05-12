@@ -13,7 +13,10 @@ htmlcov/
 .env
 .env.*
 !.env.example
-.scitex/
+.scitex/*
+!.scitex/dev/
+.scitex/dev/*
+!.scitex/dev/config.yaml
 .claude/
 .playwright-cli/
 logs/

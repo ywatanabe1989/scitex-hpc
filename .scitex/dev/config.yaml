@@ -1,0 +1,10 @@
+# scitex-dev project config
+# Whitelist top-level entries that audit-project (PS-102/PS-103) would
+# otherwise flag as runtime artifacts.
+
+audit:
+  root-whitelist:
+    files:
+      # Codecov ALWAYS reads `codecov.yml` from repo root — non-negotiable
+      # location per codecov.io docs. Whitelist it from PS-103.
+      - codecov.yml
