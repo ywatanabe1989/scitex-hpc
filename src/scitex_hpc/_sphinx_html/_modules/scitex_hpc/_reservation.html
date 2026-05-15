@@ -5,7 +5,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>scitex_hpc._reservation &mdash; scitex-hpc 0.8.0 documentation</title>
+  <title>scitex_hpc._reservation &mdash; scitex-hpc 0.8.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
@@ -13,7 +13,7 @@
   
       <script src="../../_static/jquery.js?v=5d32c60e"></script>
       <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="../../_static/documentation_options.js?v=486e5634"></script>
+      <script src="../../_static/documentation_options.js?v=ec16d22d"></script>
       <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
       <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
       <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -224,8 +224,15 @@
 
 
 <span class="k">def</span><span class="w"> </span><span class="nf">_make_lease_id</span><span class="p">(</span><span class="n">host</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lease id is ``&lt;host&gt;-&lt;name&gt;``. Names must be filesystem-safe.&quot;&quot;&quot;</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Lease id is ``&lt;host&gt;-&lt;name&gt;``. Names must be filesystem-safe.</span>
+
+<span class="sd">    If ``name`` already starts with ``&lt;host&gt;-`` (common with the</span>
+<span class="sd">    canonical naming convention `spartan-cpu-...`), don&#39;t double the</span>
+<span class="sd">    prefix — would produce e.g. ``spartan-spartan-cpu-...``.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">safe</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">sub</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;[^A-Za-z0-9._-]&quot;</span><span class="p">,</span> <span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="n">name</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">safe</span> <span class="o">==</span> <span class="n">host</span> <span class="ow">or</span> <span class="n">safe</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">-&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">safe</span>
     <span class="k">return</span> <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">host</span><span class="si">}</span><span class="s2">-</span><span class="si">{</span><span class="n">safe</span><span class="si">}</span><span class="s2">&quot;</span>
 
 
