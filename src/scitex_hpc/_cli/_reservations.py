@@ -124,9 +124,28 @@ def book_cmd(
     """Submit a hold-job and wait for SLURM allocation.
 
     \b
+    Naming convention (use this for NAME — encodes the shape so any
+    operator can read it without re-discovering the allocation):
+      CPU-only : cpu-<cores>-cores-<ram_gb>-ram
+                  e.g. cpu-64-cores-256-ram
+      GPU      : gpu-<cores>-cores-<ram_gb>-ram-<vram_gb>-vram
+                  e.g. gpu-16-cores-128-ram-80-vram   (1× H100, 80 GB)
+                       gpu-32-cores-256-ram-40-vram   (1× A100-40, etc.)
+    Suffix `-NxTYPE` if you book multiple GPUs (e.g. `...-80-vram-4xh100`).
+    Persistent reservations should also embed the cluster prefix
+    (`spartan-cpu-64-cores-256-ram`) so multi-cluster operators don't
+    collide on the same lease id.
+
+    \b
     Example:
-      $ scitex-hpc reservations book dev-pool --host spartan --cpus 8 --mem 32G --time 7-0 --persistent
-      $ scitex-hpc reservations book bm198-smoke --host spartan --nodelist spartan-bm198 --time 1:00:00 --account punim2354
+      $ scitex-hpc reservations book spartan-cpu-64-cores-256-ram \\
+          --host spartan --partition cascade \\
+          --cpus 64 --mem 256G --time 7-0 \\
+          --account punim2354 --persistent
+      $ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram \\
+          --host spartan --partition gpu-h100 \\
+          --cpus 16 --mem 128G --gpus h100:1 --time 7-0 \\
+          --account punim2354 --qos feit --persistent
     """
     del yes
     cfg = JobConfig(

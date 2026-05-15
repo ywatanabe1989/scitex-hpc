@@ -149,8 +149,15 @@ def _lease_dir() -> Path:
 
 
 def _make_lease_id(host: str, name: str) -> str:
-    """Lease id is ``<host>-<name>``. Names must be filesystem-safe."""
+    """Lease id is ``<host>-<name>``. Names must be filesystem-safe.
+
+    If ``name`` already starts with ``<host>-`` (common with the
+    canonical naming convention `spartan-cpu-...`), don't double the
+    prefix — would produce e.g. ``spartan-spartan-cpu-...``.
+    """
     safe = re.sub(r"[^A-Za-z0-9._-]", "-", name)
+    if safe == host or safe.startswith(f"{host}-"):
+        return safe
     return f"{host}-{safe}"
 
 
