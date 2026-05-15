@@ -24,10 +24,14 @@ def _quote(s: str) -> str:
     return "'" + s.replace("'", "'\\''") + "'"
 
 
-def srun(config: JobConfig) -> int:
+def srun(config: JobConfig, *, runner=None) -> int:
     """Run ``config.command`` synchronously inside an srun allocation.
 
     Returns the remote pytest / shell exit code.
+
+    ``runner`` is a test-injection seam: pass a real fake callable with
+    the ``exec_remote(host, command, ...) -> CompletedProcess``-shape
+    signature. Defaults to ``scitex_ssh.exec_remote``.
     """
     if not config.command:
         raise ValueError("JobConfig.command is required for srun()")
@@ -42,14 +46,19 @@ def srun(config: JobConfig) -> int:
         f"bash -lc {_quote(config.command)}"
     )
 
-    result = exec_remote(host, _wrap_in_login_shell(inner))
+    run = runner if runner is not None else exec_remote
+    result = run(host, _wrap_in_login_shell(inner))
     return result.returncode
 
 
-def sbatch(config: JobConfig) -> str | None:
+def sbatch(config: JobConfig, *, runner=None) -> str | None:
     """Submit a batch job; return the SLURM job ID (e.g. ``"24386489"``).
 
     Returns None on submission failure.
+
+    ``runner`` is a test-injection seam: pass a real fake callable with
+    the ``exec_remote(host, command, ...) -> CompletedProcess``-shape
+    signature. Defaults to ``scitex_ssh.exec_remote``.
     """
     if not config.command:
         raise ValueError("JobConfig.command is required for sbatch()")
@@ -79,7 +88,8 @@ def sbatch(config: JobConfig) -> str | None:
         f"sbatch <(printf %s {_quote(script_body)})"
     )
 
-    result = exec_remote(host, _wrap_in_login_shell(inner))
+    run = runner if runner is not None else exec_remote
+    result = run(host, _wrap_in_login_shell(inner))
     if result.returncode != 0:
         return None
     # ``sbatch`` prints "Submitted batch job <ID>" on success.

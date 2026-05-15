@@ -31,11 +31,45 @@ def _load_example():
     return mod
 
 
-def test_example_file_exists():
-    assert EXAMPLE_PATH.is_file(), f"missing example: {EXAMPLE_PATH}"
+@pytest.fixture
+def _isolated_example_env(tmp_path):
+    """Real env-var + cwd isolation — no monkeypatch."""
+    # Arrange
+    import os
+
+    prior_host = os.environ.get("SCITEX_HPC_HOST")
+    prior_cwd = os.getcwd()
+    os.environ.pop("SCITEX_HPC_HOST", None)
+    os.chdir(tmp_path)
+    try:
+        # Act / Assert — handled by the test body.
+        yield tmp_path
+    finally:
+        os.chdir(prior_cwd)
+        if prior_host is None:
+            os.environ.pop("SCITEX_HPC_HOST", None)
+        else:
+            os.environ["SCITEX_HPC_HOST"] = prior_host
 
 
-def test_example_imports_cleanly(monkeypatch, tmp_path):
+def test_example_source_file_is_present_on_disk():
+    # Arrange
+    path = EXAMPLE_PATH
+    # Act
+    exists = path.is_file()
+    # Assert
+    assert exists, f"missing example: {path}"
+
+
+@pytest.fixture
+def _scitex_umbrella_present():
+    """Skip the test if the scitex umbrella isn't installed."""
+    pytest.importorskip("scitex")
+
+
+def test_example_module_exposes_main_when_imported(
+    _isolated_example_env, _scitex_umbrella_present
+):
     """The example module loads without syntax errors and exposes ``main``.
 
     We don't drive the function in CI — `@stx.session` pulls in the full
@@ -43,12 +77,14 @@ def test_example_imports_cleanly(monkeypatch, tmp_path):
     `SCITEX_HPC_HOST`. A clean import is the meaningful invariant; any
     actual booking is exercised by `tests/scitex_hpc/_cli/`.
     """
-    pytest.importorskip("scitex")
-    monkeypatch.delenv("SCITEX_HPC_HOST", raising=False)
-    monkeypatch.chdir(tmp_path)
+    # Arrange
+    loader = _load_example
 
+    # Act
     try:
-        mod = _load_example()
-    except ModuleNotFoundError as e:
-        pytest.skip(f"scitex umbrella missing in this env: {e}")
-    assert hasattr(mod, "main")
+        mod = loader()
+    except ModuleNotFoundError:
+        mod = None
+
+    # Assert
+    assert mod is not None and hasattr(mod, "main")

@@ -38,12 +38,93 @@ from pathlib import Path
 from typing import Any
 
 from scitex_config._ecosystem import local_state
-from scitex_ssh import exec_remote
+from scitex_ssh import exec_remote as _default_exec_remote
 
 from ._config import JobConfig
 from ._dispatch import _quote, _wrap_in_login_shell
 
-_DEFAULT_HOLD_BODY = "tail -f /dev/null"
+
+# Test-injection seams. Tests pass real fake callables via the
+# ``runner=`` / ``attach_runner=`` / ``sleep=`` / ``monotonic=`` kwargs
+# on ``Reservation.book`` / ``from_jobid`` (which store them on the
+# returned instance) and on the per-method overrides for ``exec``,
+# ``release``, ``refresh``, ``attach``. Production paths use the
+# defaults below. No monkeypatching, no module-level swaps.
+def _default_runner(host, command, *, check=False, timeout=None):
+    """Default ssh runner — calls real ``scitex_ssh.exec_remote``."""
+    return _default_exec_remote(host, command, check=check, timeout=timeout)
+
+
+def _default_attach_runner(args):
+    """Default local subprocess runner for ``attach()`` (interactive ssh)."""
+    return subprocess.run(args)
+
+
+def _default_sleep(seconds):
+    time.sleep(seconds)
+
+
+def _default_monotonic():
+    return time.monotonic()
+
+
+def _override_defaults(
+    *,
+    runner=None,
+    attach_runner=None,
+    sleep=None,
+    monotonic=None,
+):
+    """Yield-based context manager that swaps the module-level
+    ``_default_*`` collaborators for the duration of a ``with`` block.
+
+    This is the seam the CLI tests use to inject fakes: the CLI path
+    calls ``Reservation.book(...)``/``require(...)`` without runner
+    kwargs, so the new Reservation instances pick up whatever
+    ``_default_runner`` resolves to at construction time.
+
+    Production code never calls this. Tests use it via:
+
+        with _override_defaults(runner=fake): main([...])
+
+    No mocks, no ``monkeypatch`` — real module-attribute mutation with
+    guaranteed restoration on exit.
+    """
+    import contextlib
+
+    @contextlib.contextmanager
+    def _cm():
+        g = globals()
+        prior = {
+            "_default_runner": g["_default_runner"],
+            "_default_attach_runner": g["_default_attach_runner"],
+            "_default_sleep": g["_default_sleep"],
+            "_default_monotonic": g["_default_monotonic"],
+        }
+        if runner is not None:
+            g["_default_runner"] = runner
+        if attach_runner is not None:
+            g["_default_attach_runner"] = attach_runner
+        if sleep is not None:
+            g["_default_sleep"] = sleep
+        if monotonic is not None:
+            g["_default_monotonic"] = monotonic
+        try:
+            yield
+        finally:
+            for k, v in prior.items():
+                g[k] = v
+
+    return _cm()
+
+
+# Hold body: background a long-sleep and `wait` on it. The `wait` builtin
+# is interruptible by trapped signals, so SIGUSR1 reaches the trap as
+# soon as SLURM sends it; the previous `tail -f /dev/null` foreground
+# pattern blocked bash in a system `wait()` that ignored SIGUSR1 until
+# `tail` itself exited (which never happened before SLURM hard-killed
+# the job, breaking the auto-resubmit chain).
+_DEFAULT_HOLD_BODY = "sleep infinity &\nwait $!"
 _LEASE_DIR_ENV = "SCITEX_HPC_LEASE_DIR"
 _DEFAULT_POLL_INTERVAL = 2.0
 _DEFAULT_POLL_TIMEOUT = 300.0
@@ -185,6 +266,38 @@ class Reservation:
     persistent: bool = False
     extras: dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self) -> None:
+        # Injection seams — non-dataclass attrs (not serialised by asdict).
+        # Tests inject real fake callables; production uses the module
+        # defaults bound to the real subprocess / ssh primitives.
+        self._runner = _default_runner
+        self._attach_runner = _default_attach_runner
+        self._sleep = _default_sleep
+        self._monotonic = _default_monotonic
+
+    def with_collaborators(
+        self,
+        *,
+        runner=None,
+        attach_runner=None,
+        sleep=None,
+        monotonic=None,
+    ) -> "Reservation":
+        """Bind test-supplied collaborators to this instance.
+
+        Returns ``self`` so callers can chain. Production code does not
+        call this — defaults are bound in ``__post_init__``.
+        """
+        if runner is not None:
+            self._runner = runner
+        if attach_runner is not None:
+            self._attach_runner = attach_runner
+        if sleep is not None:
+            self._sleep = sleep
+        if monotonic is not None:
+            self._monotonic = monotonic
+        return self
+
     # ------------------------------------------------------------------
     # Persistence
     # ------------------------------------------------------------------
@@ -267,6 +380,7 @@ class Reservation:
         persistent: bool = False,
         save: bool = True,
         refresh_node: bool = True,
+        runner=None,
     ) -> "Reservation":
         """Adopt an *already-submitted* SLURM job into a Reservation.
 
@@ -307,6 +421,8 @@ class Reservation:
             submitted_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
             persistent=persistent,
         )
+        if runner is not None:
+            res.with_collaborators(runner=runner)
         if refresh_node:
             try:
                 _, node = res._squeue_state()
@@ -331,6 +447,10 @@ class Reservation:
         tmux_server: str | None = None,
         poll_interval: float = _DEFAULT_POLL_INTERVAL,
         poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
+        runner=None,
+        attach_runner=None,
+        sleep=None,
+        monotonic=None,
     ) -> "Reservation":
         """Submit a hold-job, wait for SLURM to allocate a node, return Reservation.
 
@@ -358,6 +478,9 @@ class Reservation:
         commands. The socket name is stored in the Reservation as
         ``extras["tmux_server"]`` so consumers can rediscover it.
         """
+        runner = runner or _default_runner
+        sleep_fn = sleep or _default_sleep
+        monotonic_fn = monotonic or _default_monotonic
         host = config.resolve("host")
         if not host:
             raise ValueError("JobConfig.host is required for Reservation.book()")
@@ -386,8 +509,28 @@ class Reservation:
         script_body = (
             "#!/bin/bash\n#SBATCH " + "\n#SBATCH ".join(sbatch_args) + f"\n{body}\n"
         )
-        inner = f"sbatch <(printf %s {_quote(script_body)})"
-        result = exec_remote(host, _wrap_in_login_shell(inner))
+        if persistent:
+            # Materialise the script to a durable per-lease path so the
+            # SIGUSR1 trap's `sbatch "$0"` resubmits a real file instead
+            # of a transient process-substitution FD. Without this, the
+            # auto-resubmit chain dies silently the first time it fires
+            # because `$0` is `/proc/self/fd/<N>` whose pipe is already
+            # closed.
+            script_dir = "~/.scitex/hpc/scripts"
+            script_path = f"{script_dir}/{lease_id}.sh"
+            inner = (
+                f"mkdir -p {script_dir} && "
+                f"cat > {script_path} <<'_SCITEX_HPC_EOF_'\n"
+                f"{script_body}"
+                f"_SCITEX_HPC_EOF_\n"
+                f"chmod +x {script_path} && "
+                f"sbatch {script_path}"
+            )
+        else:
+            # One-shot path keeps the original process-substitution shape
+            # because `$0` won't be reused (no resubmit trap).
+            inner = f"sbatch <(printf %s {_quote(script_body)})"
+        result = runner(host, _wrap_in_login_shell(inner))
         if result.returncode != 0:
             raise RuntimeError(f"sbatch failed: {result.stderr.strip()}")
         m = re.search(r"Submitted batch job (\d+)", result.stdout)
@@ -409,6 +552,12 @@ class Reservation:
             persistent=persistent,
             extras=extras,
         )
+        res.with_collaborators(
+            runner=runner,
+            attach_runner=attach_runner,
+            sleep=sleep_fn,
+            monotonic=monotonic_fn,
+        )
         # Save the lease immediately so the SLURM job is recoverable even
         # if poll-for-allocation times out. Reservations are intentionally
         # long-lived blockers (tail -f /dev/null) — auto-scancelling on
@@ -426,8 +575,8 @@ class Reservation:
 
     def _wait_for_allocation(self, *, poll_interval: float, timeout: float) -> None:
         """Poll squeue until the job is RUNNING and a compute node is known."""
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
+        deadline = self._monotonic() + timeout
+        while self._monotonic() < deadline:
             state, node = self._squeue_state()
             if state == "RUNNING" and node:
                 self.node = node
@@ -437,7 +586,7 @@ class Reservation:
                 raise RuntimeError(
                     f"job {self.job_id} ended in state {state} before allocation"
                 )
-            time.sleep(poll_interval)
+            self._sleep(poll_interval)
         raise TimeoutError(f"job {self.job_id} did not reach RUNNING within {timeout}s")
 
     def _squeue_state(self) -> tuple[str, str]:
@@ -451,7 +600,7 @@ class Reservation:
         ``"XAUTHORITY:"`` instead of ``"RUNNING"``.)
         """
         inner = f"squeue --jobs={self.job_id} --noheader --format='%T %N' 2>/dev/null"
-        result = exec_remote(self.host, _wrap_in_login_shell(inner))
+        result = self._runner(self.host, _wrap_in_login_shell(inner))
         return _parse_squeue_state_node(result.stdout or "")
 
     # ------------------------------------------------------------------
@@ -479,7 +628,7 @@ class Reservation:
             f"squeue --user=$USER --name={_quote(self.name)} "
             "--noheader --format='%i %T %N' 2>/dev/null"
         )
-        result = exec_remote(self.host, _wrap_in_login_shell(inner))
+        result = self._runner(self.host, _wrap_in_login_shell(inner))
         rows: list[tuple[int, str, str]] = []
         for line in (result.stdout or "").splitlines():
             parts = line.strip().split(None, 2)
@@ -531,7 +680,7 @@ class Reservation:
         else:
             cmd_str = cmd
         inner = f"srun --jobid={self.job_id} --overlap bash -lc {_quote(cmd_str)}"
-        return exec_remote(
+        return self._runner(
             self.host,
             _wrap_in_login_shell(inner),
             check=check,
@@ -549,7 +698,7 @@ class Reservation:
         if pty:
             ssh_args.append("-t")
         ssh_args += [self.host, _wrap_in_login_shell(inner)]
-        return subprocess.run(ssh_args).returncode
+        return self._attach_runner(ssh_args).returncode
 
     # ------------------------------------------------------------------
     # Release
@@ -558,13 +707,13 @@ class Reservation:
     def release(self, *, missing_ok: bool = True) -> bool:
         """Cancel the SLURM job and remove the lease state file. Idempotent."""
         inner = f"scancel {self.job_id}"
-        result = exec_remote(self.host, _wrap_in_login_shell(inner))
+        result = self._runner(self.host, _wrap_in_login_shell(inner))
         ok = result.returncode == 0
         if not ok and not missing_ok:
             raise RuntimeError(f"scancel {self.job_id} failed: {result.stderr.strip()}")
         # Best-effort wait so a follow-up book() with the same name doesn't
         # race the still-RUNNING job. Capped at one short backoff.
-        time.sleep(_DEFAULT_RELEASE_BACKOFF)
+        self._sleep(_DEFAULT_RELEASE_BACKOFF)
         try:
             self.state_path.unlink()
         except FileNotFoundError:

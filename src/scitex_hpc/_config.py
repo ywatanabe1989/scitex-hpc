@@ -142,15 +142,25 @@ class JobConfig:
     # ``"gpu:h100:4"``. Empty / None = CPU-only allocation.
     gpus: str | None = None
 
-    def resolve(self, key: str) -> str:
-        """Resolve a single field via direct → env → user-config → default."""
+    def resolve(self, key: str, *, user_defaults_loader=None) -> str:
+        """Resolve a single field via direct → env → user-config → default.
+
+        ``user_defaults_loader`` is a test-injection seam: pass a real
+        callable returning the user-config dict to bypass file IO. Defaults
+        to ``_load_user_defaults`` which reads ``~/.scitex/{hpc,dev}/config.yaml``.
+        """
         direct = getattr(self, key, None)
         if direct is not None and direct != "":
             return str(direct) if isinstance(direct, int) else direct
         env_val = os.environ.get(f"SCITEX_HPC_{key.upper()}")
         if env_val:
             return env_val
-        user = _load_user_defaults().get(key)
+        loader = (
+            user_defaults_loader
+            if user_defaults_loader is not None
+            else _load_user_defaults
+        )
+        user = loader().get(key)
         if user not in (None, ""):
             return str(user) if isinstance(user, int) else user
         default = HPC_DEFAULTS[key]

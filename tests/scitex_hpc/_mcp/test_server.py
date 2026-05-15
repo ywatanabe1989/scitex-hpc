@@ -5,22 +5,56 @@ from __future__ import annotations
 import pytest
 
 
-def test_mcp_server_importable():
+def test_mcp_server_module_imports_cleanly():
+    # Arrange
+    pytest.importorskip("fastmcp")
+
+    # Act
+    from scitex_hpc._mcp.server import mcp
+
+    # Assert
+    assert mcp is not None
+
+
+def test_mcp_server_has_expected_name():
+    # Arrange
     pytest.importorskip("fastmcp")
     from scitex_hpc._mcp.server import mcp
 
-    assert mcp is not None
-    assert getattr(mcp, "name", None) == "scitex-hpc"
+    # Act
+    name = getattr(mcp, "name", None)
+
+    # Assert
+    assert name == "scitex-hpc"
 
 
-def test_mcp_skills_tools_registered():
-    """`hpc_skills_list` / `hpc_skills_get` must be registered (§5)."""
+def test_mcp_skills_list_tool_registered():
+    """`hpc_skills_list` must be registered (§5)."""
+    # Arrange
     pytest.importorskip("fastmcp")
     import asyncio
 
     from scitex_hpc._mcp.server import mcp
 
+    # Act
     tools = asyncio.run(mcp.list_tools())
     names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
     assert "skills_list" in names or "hpc_skills_list" in names
+
+
+def test_mcp_skills_get_tool_registered():
+    """`hpc_skills_get` must be registered (§5)."""
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
     assert "skills_get" in names or "hpc_skills_get" in names
