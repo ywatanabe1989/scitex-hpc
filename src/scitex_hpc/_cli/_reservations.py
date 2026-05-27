@@ -126,26 +126,62 @@ def book_cmd(
     \b
     Naming convention (use this for NAME — encodes the shape so any
     operator can read it without re-discovering the allocation):
-      CPU-only : cpu-<cores>-cores-<ram_gb>-ram
-                  e.g. cpu-64-cores-256-ram
-      GPU      : gpu-<cores>-cores-<ram_gb>-ram-<vram_gb>-vram
-                  e.g. gpu-16-cores-128-ram-80-vram   (1× H100, 80 GB)
-                       gpu-32-cores-256-ram-40-vram   (1× A100-40, etc.)
-    Suffix `-NxTYPE` if you book multiple GPUs (e.g. `...-80-vram-4xh100`).
-    Persistent reservations should also embed the cluster prefix
-    (`spartan-cpu-64-cores-256-ram`) so multi-cluster operators don't
-    collide on the same lease id.
+      CPU-only : <cluster>-cpu-<cores>-cores-<ram_gb>-ram
+                  e.g. spartan-cpu-64-cores-256-ram
+      GPU      : <cluster>-gpu-<cores>-cores-<ram_gb>-ram-<vram_gb>-vram-<gputype>
+                  e.g. spartan-gpu-16-cores-128-ram-80-vram-h100
+                       spartan-gpu-8-cores-128-ram-80-vram-a100
+    Suffix the GPU type at the end so similar-shape allocations on
+    different GPU classes don't collide (always include it for GPU
+    reservations). For multiple GPUs, use `-NxTYPE` (e.g.
+    `...-80-vram-4xh100`). Always embed the cluster prefix so multi-
+    cluster operators don't collide on the same lease id.
+
+    Verified-working examples on Spartan (account=punim2354):
 
     \b
-    Example:
+      # CPU — cascade partition (64 cores / 256 GB / 7 days)
       $ scitex-hpc reservations book spartan-cpu-64-cores-256-ram \\
-          --host spartan --partition cascade \\
+          --partition cascade \\
           --cpus 64 --mem 256G --time 7-0 \\
-          --account punim2354 --persistent
-      $ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram \\
-          --host spartan --partition gpu-h100 \\
-          --cpus 16 --mem 128G --gpus h100:1 --time 7-0 \\
+          --account punim2354 --qos publiccpu --persistent
+
+    \b
+      # CPU — sapphire partition (64 cores / 128 GB / 7 days)
+      $ scitex-hpc reservations book spartan-cpu-64-cores-128-ram \\
+          --partition sapphire \\
+          --cpus 64 --mem 128G --time 7-0 \\
+          --account punim2354 --qos publiccpu --persistent
+
+    \b
+      # GPU — 1× H100 (16 cores / 128 GB / 7 days)
+      $ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram-h100 \\
+          --partition gpu-h100 \\
+          --cpus 16 --mem 128G --gpus H100:1 --time 7-0 \\
           --account punim2354 --qos feit --persistent
+
+    \b
+      # GPU — 1× A100 (8 cores / 128 GB / 7 days)
+      $ scitex-hpc reservations book spartan-gpu-8-cores-128-ram-80-vram-a100 \\
+          --partition gpu-a100 \\
+          --cpus 8 --mem 128G --gpus A100:1 --time 7-0 \\
+          --account punim2354 --qos publicgpu --persistent
+
+    \b
+    Spartan gotchas (learned the hard way):
+      * --gpus value is case-sensitive on Spartan: use UPPERCASE
+        `H100:1`, `A100:1` — lowercase fails with
+        "Requested node configuration is not available".
+      * Per-GPU caps on shared nodes:
+          - gpu-a100 nodes: 32 cores / 512 GB / 4 A100  → max 8 cores
+            and 128 GB per A100.
+          - gpu-h100 nodes: 64 cores / 1 TB  / 4 H100   → max 16 cores
+            and ~256 GB per H100.
+        Asking above these caps for a 1-GPU job is rejected.
+      * QOS by partition (account=punim2354):
+          - cascade / sapphire (CPU)  → --qos publiccpu
+          - gpu-a100                  → --qos publicgpu
+          - gpu-h100                  → --qos feit
     """
     del yes
     cfg = JobConfig(
