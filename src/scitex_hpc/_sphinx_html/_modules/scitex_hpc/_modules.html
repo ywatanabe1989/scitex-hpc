@@ -1,0 +1,342 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>scitex_hpc._modules &mdash; scitex-hpc 0.8.3 documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="../../_static/copybutton.css?v=76b2166b" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=7f96dc5e"></script>
+      <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
+      <script src="../../_static/copybutton.js?v=f281be69"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            scitex-hpc
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../api.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cli_reference.html">CLI Reference</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">scitex-hpc</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Module code</a></li>
+      <li class="breadcrumb-item active">scitex_hpc._modules</li>
+      <li class="wy-breadcrumbs-aside">
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <h1>Source code for scitex_hpc._modules</h1><div class="highlight"><pre>
+<span></span><span class="sd">&quot;&quot;&quot;Lmod / Tcl env-modules helpers for HPC hosts.</span>
+
+<span class="sd">Why this exists</span>
+<span class="sd">---------------</span>
+<span class="sd">Many HPC sites (Spartan, NCI Gadi, OLCF, ...) ship Apptainer /</span>
+<span class="sd">Singularity / CUDA / GCC via the environment-modules system rather</span>
+<span class="sd">than as system-wide binaries on PATH. A naive</span>
+<span class="sd">``shutil.which(&quot;apptainer&quot;)`` on a Spartan compute node returns</span>
+<span class="sd">either nothing or a 1KB bash shim that itself calls</span>
+<span class="sd">``module load Apptainer/1.3.3`` -- which fails in any context where</span>
+<span class="sd">the Lmod ``module`` function is not in the active shell environment</span>
+<span class="sd">(sac&#39;s inside-SIF nested launch, plain ``subprocess.run([...])`` from</span>
+<span class="sd">a Python script that did not start from a login shell, etc.).</span>
+
+<span class="sd">This module gives sac (and any other host-side scitex-hpc caller) a</span>
+<span class="sd">real, testable, no-mocks path from ``load_apptainer()`` to an absolute</span>
+<span class="sd">executable path: detect Lmod / Tcl modules, invoke</span>
+<span class="sd">``module --shell sh load &lt;name&gt;`` as a subprocess, parse the env-var</span>
+<span class="sd">diff out of stdout, splat it into the caller&#39;s process env, then</span>
+<span class="sd">``shutil.which`` the target binary against the freshly-loaded PATH.</span>
+
+<span class="sd">Design rationale + the operator decision that motivated it live in</span>
+<span class="sd">~/proj/scitex-lead/GITIGNORED/FUTURE/scitex-hpc-module-load-helpers.md</span>
+<span class="sd">(operator hint msg 6705, parallel-development greenlight msg 6709,</span>
+<span class="sd">2026-05-28).</span>
+
+<span class="sd">Test seam</span>
+<span class="sd">---------</span>
+<span class="sd">Every public function accepts a ``_run`` kwarg (default</span>
+<span class="sd">``subprocess.run`` via ``_default_run``) and ``load_apptainer`` also</span>
+<span class="sd">takes ``_which`` and ``_env``; unit tests inject hand-rolled stub</span>
+<span class="sd">callables returning canned stdout / stderr -- no ``unittest.mock``,</span>
+<span class="sd">no ``monkeypatch``, no real ``module`` subprocess on CI. PA-306 (no</span>
+<span class="sd">mocks) is satisfied by dependency injection; this mirrors the</span>
+<span class="sd">``runner=`` pattern in ``scitex_hpc._dispatch``.</span>
+
+<span class="sd">Layered with</span>
+<span class="sd">------------</span>
+<span class="sd">scitex-agent-container ships Apptainer inside the sac-base SIF</span>
+<span class="sd">(scitex-agent-container#239, 2026-05-28). That bundle covers</span>
+<span class="sd">inside-SIF nested launches; this module covers the complementary</span>
+<span class="sd">Layer 1 case -- host-side sac on an HPC login / compute node where</span>
+<span class="sd">Apptainer is only reachable via ``module load``.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">__future__</span><span class="w"> </span><span class="kn">import</span> <span class="n">annotations</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pathlib</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shlex</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">shutil</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">subprocess</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Callable</span><span class="p">,</span> <span class="n">Dict</span><span class="p">,</span> <span class="n">Literal</span><span class="p">,</span> <span class="n">Optional</span>
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Test seam: a subprocess.run-shaped callable.</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+<span class="n">_RunCallable</span> <span class="o">=</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CompletedProcess</span><span class="p">]</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_default_run</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">CompletedProcess</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;``subprocess.run`` with capture + text + non-raising defaults.&quot;&quot;&quot;</span>
+    <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;capture_output&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;text&quot;</span><span class="p">,</span> <span class="kc">True</span><span class="p">)</span>
+    <span class="n">kwargs</span><span class="o">.</span><span class="n">setdefault</span><span class="p">(</span><span class="s2">&quot;check&quot;</span><span class="p">,</span> <span class="kc">False</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span>
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Public API</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<div class="viewcode-block" id="detect_module_system">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.detect_module_system">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">detect_module_system</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">_env</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">_run</span><span class="p">:</span> <span class="n">_RunCallable</span> <span class="o">=</span> <span class="n">_default_run</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;lmod&quot;</span><span class="p">,</span> <span class="s2">&quot;tcl&quot;</span><span class="p">]]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Detect which env-modules implementation (if any) is reachable.</span>
+
+<span class="sd">    Probes in order, cheapest first.</span>
+<span class="sd">    First, ``$LMOD_CMD`` (set by Lmod&#39;s init script).</span>
+<span class="sd">    Second, ``$MODULESHOME`` *and* ``$LMOD_VERSION`` (Lmod sets both).</span>
+<span class="sd">    Third, ``$MODULESHOME`` alone (classic Tcl environment-modules).</span>
+<span class="sd">    Last, ``bash -lc &#39;module --version&#39;`` as a one-shot subprocess</span>
+<span class="sd">    sniff for sites that strip LMOD_CMD inside batch scripts.</span>
+
+<span class="sd">    Returns ``&quot;lmod&quot;``, ``&quot;tcl&quot;``, or ``None``. Pure-env detection</span>
+<span class="sd">    short-circuits before any subprocess is spawned.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">_env</span> <span class="k">if</span> <span class="n">_env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LMOD_CMD&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;lmod&quot;</span>
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MODULESHOME&quot;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LMOD_VERSION&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;lmod&quot;</span>
+    <span class="k">if</span> <span class="n">env</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;MODULESHOME&quot;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="s2">&quot;tcl&quot;</span>
+
+    <span class="n">result</span> <span class="o">=</span> <span class="n">_run</span><span class="p">([</span><span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="s2">&quot;-lc&quot;</span><span class="p">,</span> <span class="s2">&quot;module --version 2&gt;&amp;1&quot;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;returncode&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span>
+    <span class="n">blob</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">+</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span>
+    <span class="p">)</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="k">if</span> <span class="s2">&quot;lmod&quot;</span> <span class="ow">in</span> <span class="n">blob</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;lmod&quot;</span>
+    <span class="k">if</span> <span class="s2">&quot;modules release&quot;</span> <span class="ow">in</span> <span class="n">blob</span> <span class="ow">or</span> <span class="s2">&quot;modules-tcl&quot;</span> <span class="ow">in</span> <span class="n">blob</span> <span class="ow">or</span> <span class="s2">&quot;tcl&quot;</span> <span class="ow">in</span> <span class="n">blob</span><span class="p">:</span>
+        <span class="k">return</span> <span class="s2">&quot;tcl&quot;</span>
+    <span class="k">return</span> <span class="kc">None</span></div>
+
+
+
+<div class="viewcode-block" id="module_load">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.module_load">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">module_load</span><span class="p">(</span>
+    <span class="o">*</span><span class="n">modules</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+    <span class="n">shell</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;sh&quot;</span><span class="p">,</span>
+    <span class="n">_run</span><span class="p">:</span> <span class="n">_RunCallable</span> <span class="o">=</span> <span class="n">_default_run</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Load env-modules and return the env-var diff they introduced.</span>
+
+<span class="sd">    Invokes ``module --shell &lt;shell&gt; load &lt;modules&gt;``, which prints a</span>
+<span class="sd">    shell-eval-able script (``export PATH=...; export FOO=bar;``).</span>
+<span class="sd">    We parse that into ``{var: value}`` and return the diff -- callers</span>
+<span class="sd">    can splat it into a subprocess env, or merge into ``os.environ``,</span>
+<span class="sd">    without having to spawn a login shell themselves.</span>
+
+<span class="sd">    ``shell`` (default ``sh``) only changes the output language Lmod</span>
+<span class="sd">    emits. We always parse the ``export VAR=VALUE`` / ``setenv VAR</span>
+<span class="sd">    VALUE`` forms -- valid for both ``sh`` and ``bash`` outputs.</span>
+
+<span class="sd">    Raises ``ValueError`` if no modules were named, and</span>
+<span class="sd">    ``ModuleNotFoundError`` if the underlying ``module load`` exits</span>
+<span class="sd">    non-zero -- with the module&#39;s stderr surfaced verbatim.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">modules</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;module_load() requires at least one module name&quot;</span><span class="p">)</span>
+
+    <span class="n">mods</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">m</span><span class="p">)</span> <span class="k">for</span> <span class="n">m</span> <span class="ow">in</span> <span class="n">modules</span><span class="p">)</span>
+    <span class="n">cmd</span> <span class="o">=</span> <span class="sa">f</span><span class="s2">&quot;module --shell </span><span class="si">{</span><span class="n">shlex</span><span class="o">.</span><span class="n">quote</span><span class="p">(</span><span class="n">shell</span><span class="p">)</span><span class="si">}</span><span class="s2"> load </span><span class="si">{</span><span class="n">mods</span><span class="si">}</span><span class="s2">&quot;</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="n">_run</span><span class="p">([</span><span class="s2">&quot;bash&quot;</span><span class="p">,</span> <span class="s2">&quot;-lc&quot;</span><span class="p">,</span> <span class="n">cmd</span><span class="p">])</span>
+    <span class="k">if</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;returncode&quot;</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">stderr</span> <span class="o">=</span> <span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;stderr&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span> <span class="ow">or</span> <span class="s2">&quot;no stderr&quot;</span>
+        <span class="k">raise</span> <span class="ne">ModuleNotFoundError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;module load </span><span class="si">{</span><span class="nb">list</span><span class="p">(</span><span class="n">modules</span><span class="p">)</span><span class="si">!r}</span><span class="s2"> failed: </span><span class="si">{</span><span class="n">stderr</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">_parse_env_exports</span><span class="p">(</span><span class="nb">getattr</span><span class="p">(</span><span class="n">result</span><span class="p">,</span> <span class="s2">&quot;stdout&quot;</span><span class="p">,</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="ow">or</span> <span class="s2">&quot;&quot;</span><span class="p">)</span></div>
+
+
+
+<div class="viewcode-block" id="load_apptainer">
+<a class="viewcode-back" href="../../_autosummary/scitex_hpc.html#scitex_hpc.load_apptainer">[docs]</a>
+<span class="k">def</span><span class="w"> </span><span class="nf">load_apptainer</span><span class="p">(</span>
+    <span class="o">*</span><span class="p">,</span>
+    <span class="n">version</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;1.3.3&quot;</span><span class="p">,</span>
+    <span class="n">_env</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">_run</span><span class="p">:</span> <span class="n">_RunCallable</span> <span class="o">=</span> <span class="n">_default_run</span><span class="p">,</span>
+    <span class="n">_which</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]]</span> <span class="o">=</span> <span class="n">shutil</span><span class="o">.</span><span class="n">which</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Resolve an absolute path to the ``apptainer`` binary.</span>
+
+<span class="sd">    When a module system is detected, attempt</span>
+<span class="sd">    ``module load Apptainer/&lt;version&gt;`` (or just ``Apptainer`` if</span>
+<span class="sd">    ``version`` is None), splat the resulting env-var diff into the</span>
+<span class="sd">    caller&#39;s process env, then ``shutil.which(&quot;apptainer&quot;)`` against</span>
+<span class="sd">    the post-load environment.</span>
+<span class="sd">    Otherwise fall back to a bare ``shutil.which(&quot;apptainer&quot;)`` so</span>
+<span class="sd">    non-HPC dev laptops with apptainer already on PATH continue to</span>
+<span class="sd">    Just Work.</span>
+
+<span class="sd">    The function mutates the env dict passed via ``_env`` (default</span>
+<span class="sd">    ``os.environ``); production callers get sticky PATH updates,</span>
+<span class="sd">    tests pass an isolated dict and assert no leakage.</span>
+
+<span class="sd">    Raises ``RuntimeError`` if no apptainer binary is reachable even</span>
+<span class="sd">    after the module load.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">env</span> <span class="o">=</span> <span class="n">_env</span> <span class="k">if</span> <span class="n">_env</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span>
+    <span class="n">system</span> <span class="o">=</span> <span class="n">detect_module_system</span><span class="p">(</span><span class="n">_env</span><span class="o">=</span><span class="n">env</span><span class="p">,</span> <span class="n">_run</span><span class="o">=</span><span class="n">_run</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="n">system</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">mod</span> <span class="o">=</span> <span class="s2">&quot;Apptainer&quot;</span> <span class="k">if</span> <span class="n">version</span> <span class="ow">is</span> <span class="kc">None</span> <span class="k">else</span> <span class="sa">f</span><span class="s2">&quot;Apptainer/</span><span class="si">{</span><span class="n">version</span><span class="si">}</span><span class="s2">&quot;</span>
+        <span class="n">diff</span> <span class="o">=</span> <span class="n">module_load</span><span class="p">(</span><span class="n">mod</span><span class="p">,</span> <span class="n">_run</span><span class="o">=</span><span class="n">_run</span><span class="p">)</span>
+        <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">diff</span><span class="o">.</span><span class="n">items</span><span class="p">():</span>
+            <span class="n">env</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">v</span>
+
+    <span class="n">path</span> <span class="o">=</span> <span class="n">_which</span><span class="p">(</span><span class="s2">&quot;apptainer&quot;</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">path</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span>
+            <span class="s2">&quot;apptainer binary not found after module load; &quot;</span>
+            <span class="sa">f</span><span class="s2">&quot;module system detected: </span><span class="si">{</span><span class="n">system</span><span class="si">!r}</span><span class="s2">. &quot;</span>
+            <span class="s2">&quot;Either install apptainer or pass an explicit version= &quot;</span>
+            <span class="s2">&quot;matching one of `module avail Apptainer`.&quot;</span>
+        <span class="p">)</span>
+    <span class="k">return</span> <span class="n">pathlib</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">resolve</span><span class="p">()</span></div>
+
+
+
+<span class="c1"># ---------------------------------------------------------------------------</span>
+<span class="c1"># Helpers</span>
+<span class="c1"># ---------------------------------------------------------------------------</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">_parse_env_exports</span><span class="p">(</span><span class="n">blob</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Pick ``export VAR=VALUE`` / ``setenv VAR VALUE`` pairs out of *blob*.</span>
+
+<span class="sd">    Tolerant of trailing semicolons, single- and double-quoted values,</span>
+<span class="sd">    and blank / commented lines. Variables exported empty (e.g.</span>
+<span class="sd">    ``export FOO=&#39;&#39;``) are preserved. ``unset`` lines are skipped --</span>
+<span class="sd">    Lmod emits them but they are rarely the difference between</span>
+<span class="sd">    found / not-found for the apptainer-resolution use case.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">diff</span><span class="p">:</span> <span class="n">Dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+    <span class="k">for</span> <span class="n">raw</span> <span class="ow">in</span> <span class="n">blob</span><span class="o">.</span><span class="n">splitlines</span><span class="p">():</span>
+        <span class="n">line</span> <span class="o">=</span> <span class="n">raw</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span><span class="o">.</span><span class="n">rstrip</span><span class="p">(</span><span class="s2">&quot;;&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">line</span> <span class="ow">or</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;#&quot;</span><span class="p">):</span>
+            <span class="k">continue</span>
+        <span class="k">if</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;export &quot;</span><span class="p">):</span>
+            <span class="n">body</span> <span class="o">=</span> <span class="n">line</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;export &quot;</span><span class="p">)</span> <span class="p">:]</span>
+            <span class="k">if</span> <span class="s2">&quot;=&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">body</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">var</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">body</span><span class="o">.</span><span class="n">partition</span><span class="p">(</span><span class="s2">&quot;=&quot;</span><span class="p">)</span>
+        <span class="k">elif</span> <span class="n">line</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s2">&quot;setenv &quot;</span><span class="p">):</span>
+            <span class="n">parts</span> <span class="o">=</span> <span class="n">line</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="s2">&quot;setenv &quot;</span><span class="p">)</span> <span class="p">:]</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="mi">1</span><span class="p">)</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">2</span><span class="p">:</span>
+                <span class="k">continue</span>
+            <span class="n">var</span><span class="p">,</span> <span class="n">value</span> <span class="o">=</span> <span class="n">parts</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">var</span> <span class="o">=</span> <span class="n">var</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">value</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span> <span class="ow">and</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="n">value</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="ow">and</span> <span class="n">value</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="ow">in</span> <span class="p">(</span><span class="s2">&quot;&#39;&quot;</span><span class="p">,</span> <span class="s1">&#39;&quot;&#39;</span><span class="p">):</span>
+            <span class="n">value</span> <span class="o">=</span> <span class="n">value</span><span class="p">[</span><span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
+        <span class="n">diff</span><span class="p">[</span><span class="n">var</span><span class="p">]</span> <span class="o">=</span> <span class="n">value</span>
+    <span class="k">return</span> <span class="n">diff</span>
+</pre></div>
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, Yusuke Watanabe.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

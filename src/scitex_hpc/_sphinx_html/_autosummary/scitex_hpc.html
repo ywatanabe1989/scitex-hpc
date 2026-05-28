@@ -94,7 +94,10 @@
 <li class="toctree-l4"><a class="reference internal" href="#scitex_hpc.Reservation.with_collaborators"><code class="docutils literal notranslate"><span class="pre">Reservation.with_collaborators()</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.detect_module_system"><code class="docutils literal notranslate"><span class="pre">detect_module_system()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.fetch_result"><code class="docutils literal notranslate"><span class="pre">fetch_result()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.load_apptainer"><code class="docutils literal notranslate"><span class="pre">load_apptainer()</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.module_load"><code class="docutils literal notranslate"><span class="pre">module_load()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.poll_job"><code class="docutils literal notranslate"><span class="pre">poll_job()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.sbatch"><code class="docutils literal notranslate"><span class="pre">sbatch()</span></code></a></li>
 <li class="toctree-l3"><a class="reference internal" href="#scitex_hpc.srun"><code class="docutils literal notranslate"><span class="pre">srun()</span></code></a></li>
@@ -134,23 +137,29 @@
   <section id="module-scitex_hpc">
 <span id="scitex-hpc"></span><h1>scitex_hpc<a class="headerlink" href="#module-scitex_hpc" title="Link to this heading"></a></h1>
 <p>scitex-hpc — generic SLURM dispatch for the SciTeX ecosystem.</p>
-<p>Public API:</p>
-<blockquote>
-<div><dl class="simple">
-<dt>from scitex_hpc import (</dt><dd><p>JobConfig,
-srun,                # blocking interactive run via srun
-sbatch,              # async batch submission, returns job ID
-sync,                # rsync project to HPC host
-poll_job,            # check sacct status for a job ID
-fetch_result,        # scp the full output of a sbatch job</p>
-</dd>
-</dl>
-<p>)</p>
-</div></blockquote>
-<p>No cluster names are baked in. Defaults resolve via cascade:
-explicit <cite>JobConfig(…)</cite> → <cite>SCITEX_HPC_*</cite> env vars →
-<cite>~/.scitex/{hpc,dev}/config.yaml</cite> (<cite>hpc.defaults.*</cite>) → cluster-agnostic
-fallbacks. Set your <cite>host</cite> / <cite>partition</cite> once in user config and forget.</p>
+<p>Dispatch verbs exported from <code class="docutils literal notranslate"><span class="pre">scitex_hpc</span></code>.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">JobConfig</span></code> is the config struct shared by every dispatch verb.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">srun</span></code> runs a blocking interactive job via srun.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sbatch</span></code> submits an async batch job and returns the job ID.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sync</span></code> rsyncs a project tree to the HPC host.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">poll_job</span></code> checks sacct status for a job ID.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fetch_result</span></code> scps the full output of a sbatch job.</p></li>
+</ul>
+<p>HPC-awareness helpers (Phase 1 of the HPC-aware Apptainer story).
+Pairs with the inside-SIF apptainer bundle in
+scitex-agent-container#239 (operator decision 2026-05-28, Telegram
+msgs 6705 and 6709).</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">detect_module_system</span></code> returns <code class="docutils literal notranslate"><span class="pre">'lmod'</span></code>, <code class="docutils literal notranslate"><span class="pre">'tcl'</span></code>, or <code class="docutils literal notranslate"><span class="pre">None</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">module_load</span></code> runs <code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">load</span> <span class="pre">X</span></code> and returns the env-var diff.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">load_apptainer</span></code> resolves the apptainer binary via Lmod if needed.</p></li>
+</ul>
+<p>No cluster names are baked in.
+Defaults resolve via cascade — explicit <code class="docutils literal notranslate"><span class="pre">JobConfig(...)</span></code>,
+<code class="docutils literal notranslate"><span class="pre">SCITEX_HPC_*</span></code> env vars, <code class="docutils literal notranslate"><span class="pre">~/.scitex/{hpc,dev}/config.yaml</span></code>
+(<code class="docutils literal notranslate"><span class="pre">hpc.defaults.*</span></code>), then cluster-agnostic fallbacks.
+Set your <code class="docutils literal notranslate"><span class="pre">host</span></code> / <code class="docutils literal notranslate"><span class="pre">partition</span></code> once in user config and forget.</p>
 <p>Login nodes never run compute — every command is wrapped in srun/sbatch.</p>
 <dl class="py class">
 <dt class="sig sig-object py" id="scitex_hpc.JobConfig">
@@ -498,6 +507,25 @@ call this — defaults are bound in <code class="docutils literal notranslate"><
 </dd></dl>
 
 <dl class="py function">
+<dt class="sig sig-object py" id="scitex_hpc.detect_module_system">
+<span class="sig-prename descclassname"><span class="pre">scitex_hpc.</span></span><span class="sig-name descname"><span class="pre">detect_module_system</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_env</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_run</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">_default_run&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/scitex_hpc/_modules.html#detect_module_system"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#scitex_hpc.detect_module_system" title="Link to this definition"></a></dt>
+<dd><p>Detect which env-modules implementation (if any) is reachable.</p>
+<p>Probes in order, cheapest first.
+First, <code class="docutils literal notranslate"><span class="pre">$LMOD_CMD</span></code> (set by Lmod’s init script).
+Second, <code class="docutils literal notranslate"><span class="pre">$MODULESHOME</span></code> <em>and</em> <code class="docutils literal notranslate"><span class="pre">$LMOD_VERSION</span></code> (Lmod sets both).
+Third, <code class="docutils literal notranslate"><span class="pre">$MODULESHOME</span></code> alone (classic Tcl environment-modules).
+Last, <code class="docutils literal notranslate"><span class="pre">bash</span> <span class="pre">-lc</span> <span class="pre">'module</span> <span class="pre">--version'</span></code> as a one-shot subprocess
+sniff for sites that strip LMOD_CMD inside batch scripts.</p>
+<p>Returns <code class="docutils literal notranslate"><span class="pre">&quot;lmod&quot;</span></code>, <code class="docutils literal notranslate"><span class="pre">&quot;tcl&quot;</span></code>, or <code class="docutils literal notranslate"><span class="pre">None</span></code>. Pure-env detection
+short-circuits before any subprocess is spawned.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Optional" title="(in Python v3.14)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Optional</span></code></a>[<a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Literal" title="(in Python v3.14)"><code class="xref py py-data docutils literal notranslate"><span class="pre">Literal</span></code></a>[<code class="docutils literal notranslate"><span class="pre">'lmod'</span></code>, <code class="docutils literal notranslate"><span class="pre">'tcl'</span></code>]]</span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
 <dt class="sig sig-object py" id="scitex_hpc.fetch_result">
 <span class="sig-prename descclassname"><span class="pre">scitex_hpc.</span></span><span class="sig-name descname"><span class="pre">fetch_result</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">config</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">job_id</span></span></em>, <em class="sig-param"><span class="keyword-only-separator o"><abbr title="Keyword-only parameters separator (PEP 3102)"><span class="pre">*</span></abbr></span></em>, <em class="sig-param"><span class="n"><span class="pre">local_dir</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'.pytest-hpc-output'</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/scitex_hpc/_results.html#fetch_result"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#scitex_hpc.fetch_result" title="Link to this definition"></a></dt>
 <dd><p>scp the sbatch job’s stdout file back to <code class="docutils literal notranslate"><span class="pre">local_dir</span></code>.</p>
@@ -507,6 +535,52 @@ call this — defaults are bound in <code class="docutils literal notranslate"><
 <dl class="field-list simple">
 <dt class="field-odd">Return type<span class="colon">:</span></dt>
 <dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/functions.html#bool" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">bool</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="scitex_hpc.load_apptainer">
+<span class="sig-prename descclassname"><span class="pre">scitex_hpc.</span></span><span class="sig-name descname"><span class="pre">load_apptainer</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">version</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'1.3.3'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_env</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_run</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">_default_run&gt;</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_which</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">which&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/scitex_hpc/_modules.html#load_apptainer"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#scitex_hpc.load_apptainer" title="Link to this definition"></a></dt>
+<dd><p>Resolve an absolute path to the <code class="docutils literal notranslate"><span class="pre">apptainer</span></code> binary.</p>
+<p>When a module system is detected, attempt
+<code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">load</span> <span class="pre">Apptainer/&lt;version&gt;</span></code> (or just <code class="docutils literal notranslate"><span class="pre">Apptainer</span></code> if
+<code class="docutils literal notranslate"><span class="pre">version</span></code> is None), splat the resulting env-var diff into the
+caller’s process env, then <code class="docutils literal notranslate"><span class="pre">shutil.which(&quot;apptainer&quot;)</span></code> against
+the post-load environment.
+Otherwise fall back to a bare <code class="docutils literal notranslate"><span class="pre">shutil.which(&quot;apptainer&quot;)</span></code> so
+non-HPC dev laptops with apptainer already on PATH continue to
+Just Work.</p>
+<p>The function mutates the env dict passed via <code class="docutils literal notranslate"><span class="pre">_env</span></code> (default
+<code class="docutils literal notranslate"><span class="pre">os.environ</span></code>); production callers get sticky PATH updates,
+tests pass an isolated dict and assert no leakage.</p>
+<p>Raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> if no apptainer binary is reachable even
+after the module load.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/pathlib.html#pathlib.Path" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Path</span></code></a></span></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="scitex_hpc.module_load">
+<span class="sig-prename descclassname"><span class="pre">scitex_hpc.</span></span><span class="sig-name descname"><span class="pre">module_load</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">*modules</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shell</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">'sh'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_run</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">&lt;function</span> <span class="pre">_default_run&gt;</span></span></em><span class="sig-paren">)</span><a class="reference internal" href="../_modules/scitex_hpc/_modules.html#module_load"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#scitex_hpc.module_load" title="Link to this definition"></a></dt>
+<dd><p>Load env-modules and return the env-var diff they introduced.</p>
+<p>Invokes <code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">--shell</span> <span class="pre">&lt;shell&gt;</span> <span class="pre">load</span> <span class="pre">&lt;modules&gt;</span></code>, which prints a
+shell-eval-able script (<code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">PATH=...;</span> <span class="pre">export</span> <span class="pre">FOO=bar;</span></code>).
+We parse that into <code class="docutils literal notranslate"><span class="pre">{var:</span> <span class="pre">value}</span></code> and return the diff – callers
+can splat it into a subprocess env, or merge into <code class="docutils literal notranslate"><span class="pre">os.environ</span></code>,
+without having to spawn a login shell themselves.</p>
+<p><code class="docutils literal notranslate"><span class="pre">shell</span></code> (default <code class="docutils literal notranslate"><span class="pre">sh</span></code>) only changes the output language Lmod
+emits. We always parse the <code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">VAR=VALUE</span></code> / <code class="docutils literal notranslate"><span class="pre">setenv</span> <span class="pre">VAR</span>
+<span class="pre">VALUE</span></code> forms – valid for both <code class="docutils literal notranslate"><span class="pre">sh</span></code> and <code class="docutils literal notranslate"><span class="pre">bash</span></code> outputs.</p>
+<p>Raises <code class="docutils literal notranslate"><span class="pre">ValueError</span></code> if no modules were named, and
+<code class="docutils literal notranslate"><span class="pre">ModuleNotFoundError</span></code> if the underlying <code class="docutils literal notranslate"><span class="pre">module</span> <span class="pre">load</span></code> exits
+non-zero – with the module’s stderr surfaced verbatim.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Return type<span class="colon">:</span></dt>
+<dd class="field-odd"><p><span class="sphinx_autodoc_typehints-type"><a class="reference external" href="https://docs.python.org/3/library/typing.html#typing.Dict" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Dict</span></code></a>[<a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>, <a class="reference external" href="https://docs.python.org/3/library/stdtypes.html#str" title="(in Python v3.14)"><code class="xref py py-class docutils literal notranslate"><span class="pre">str</span></code></a>]</span></p>
 </dd>
 </dl>
 </dd></dl>
