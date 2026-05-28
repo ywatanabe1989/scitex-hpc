@@ -30,7 +30,7 @@ dependencies = [
 dev = ["pytest", "pytest-cov", "pytest-timeout", "ruff", "scitex-dev>=0.11.7"]
 mcp = ["fastmcp>=0.1.0"]
 docs = [
-    "sphinx>=7.0",
+    "sphinx>=7.0,<9",
     "sphinx-rtd-theme>=2.0",
     "myst-parser>=2.0",
     "sphinx-copybutton>=0.5",

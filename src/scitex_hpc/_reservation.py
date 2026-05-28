@@ -627,6 +627,7 @@ class Reservation:
         state is persisted to the lease file.
 
         Behavior in edge cases:
+
         - No matching job in queue → fields cleared (job_id="", node="")
         - Multiple matching jobs (resubmit overlap window) → picks the
           newest jobid, since the older one is about to exit

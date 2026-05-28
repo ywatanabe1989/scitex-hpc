@@ -6,6 +6,6 @@ the live click group via `sphinx-click`_.
 
 .. _sphinx-click: https://sphinx-click.readthedocs.io/
 
-.. click:: scitex_hpc._cli:main
+.. click:: scitex_hpc._cli:cli
    :prog: scitex-hpc
    :nested: full
