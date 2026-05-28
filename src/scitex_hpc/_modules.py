@@ -79,15 +79,14 @@ def detect_module_system(
 ) -> Optional[Literal["lmod", "tcl"]]:
     """Detect which env-modules implementation (if any) is reachable.
 
-    Probes (in order, cheapest first):
+    Probes in order, cheapest first.
+    First, ``$LMOD_CMD`` (set by Lmod's init script).
+    Second, ``$MODULESHOME`` *and* ``$LMOD_VERSION`` (Lmod sets both).
+    Third, ``$MODULESHOME`` alone (classic Tcl environment-modules).
+    Last, ``bash -lc 'module --version'`` as a one-shot subprocess
+    sniff for sites that strip LMOD_CMD inside batch scripts.
 
-      1. ``$LMOD_CMD`` -- set by Lmod's init script.
-      2. ``$MODULESHOME`` *and* ``$LMOD_VERSION`` -- Lmod sets both.
-      3. ``$MODULESHOME`` alone -- classic Tcl environment-modules.
-      4. ``bash -lc 'module --version'`` -- last-resort sniff for sites
-         that strip LMOD_CMD inside batch scripts. One subprocess call.
-
-    Returns ``"lmod"`` / ``"tcl"`` / ``None``. Pure-env detection
+    Returns ``"lmod"``, ``"tcl"``, or ``None``. Pure-env detection
     short-circuits before any subprocess is spawned.
     """
     env = _env if _env is not None else os.environ
@@ -154,16 +153,14 @@ def load_apptainer(
 ) -> pathlib.Path:
     """Resolve an absolute path to the ``apptainer`` binary.
 
-    Order of resolution:
-
-      1. If a module system is detected, attempt
-         ``module load Apptainer/<version>`` (or just ``Apptainer`` if
-         ``version`` is None), splat the resulting env-var diff into
-         the caller's process env, then ``shutil.which("apptainer")``
-         against the post-load environment.
-      2. Otherwise fall back to a bare ``shutil.which("apptainer")``
-         -- so non-HPC dev laptops with apptainer already on PATH
-         continue to Just Work.
+    When a module system is detected, attempt
+    ``module load Apptainer/<version>`` (or just ``Apptainer`` if
+    ``version`` is None), splat the resulting env-var diff into the
+    caller's process env, then ``shutil.which("apptainer")`` against
+    the post-load environment.
+    Otherwise fall back to a bare ``shutil.which("apptainer")`` so
+    non-HPC dev laptops with apptainer already on PATH continue to
+    Just Work.
 
     The function mutates the env dict passed via ``_env`` (default
     ``os.environ``); production callers get sticky PATH updates,
