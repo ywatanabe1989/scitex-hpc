@@ -175,3 +175,52 @@ def fetch_result(
 
     cfg = _make_config(project=project, host=host)
     return {"ok": _fetch(cfg, job_id, local_dir=local_dir)}
+
+
+# ------------------------------------------------------------ HPC-awareness
+# Thin wrappers around the host-side env-modules helpers added in
+# scitex-hpc#8 (Lmod / Tcl + Apptainer resolution). Tool names match the
+# Python API names exactly so the scitex-dev audit-mcp-tools rule §6
+# does not grow the existing coverage gap when these helpers ship --
+# "zero-growth" per the operator directive on top of #8.
+
+
+@mcp.tool()
+def detect_module_system() -> dict:
+    """Detect the host's env-modules implementation.
+
+    Returns ``{"system": "lmod" | "tcl" | null}``. Probes ``$LMOD_CMD``,
+    ``$MODULESHOME``, then ``module --version`` as a final sniff.
+    """
+    from .._modules import detect_module_system as _detect
+
+    return {"system": _detect()}
+
+
+@mcp.tool()
+def module_load(modules: list[str], shell: str = "sh") -> dict:
+    """``module load <modules>`` -> env-var diff dict.
+
+    ``modules`` is the list of module names (e.g. ``["Apptainer/1.3.3"]``).
+    Returns ``{"diff": {var: value, ...}}``. Caller can splat the diff
+    into a subprocess env without spawning a login shell.
+
+    Raises a tool-level error if ``module load`` exits non-zero.
+    """
+    from .._modules import module_load as _module_load
+
+    diff = _module_load(*modules, shell=shell)
+    return {"diff": diff}
+
+
+@mcp.tool()
+def load_apptainer(version: str | None = "1.3.3") -> dict:
+    """Resolve an absolute path to the ``apptainer`` binary.
+
+    When a module system is detected, loads ``Apptainer/<version>`` (or
+    bare ``Apptainer`` when ``version=null``) first; then ``shutil.which``.
+    Returns ``{"path": "<abs-path>"}``.
+    """
+    from .._modules import load_apptainer as _load
+
+    return {"path": str(_load(version=version))}
