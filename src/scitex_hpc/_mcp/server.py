@@ -154,6 +154,86 @@ def sync_project(project: str, host: str | None = None) -> dict:
     return {"project": project, "host": cfg.resolve("host")}
 
 
+# ----------------------------------------------- name-aligned dispatch aliases
+# Thin aliases whose MCP tool name matches the underlying Python API name
+# (``sbatch``, ``srun``, ``sync``) verbatim. They sit alongside the verb-
+# prefixed canonical wrappers above (``submit_sbatch``, ``dispatch_srun``,
+# ``sync_project``) so existing umbrella callers keep working while the
+# scitex-dev v0.13.0 audit-mcp-tools §6 rule -- which matches by exact
+# name -- sees the Python API surface as fully covered.
+#
+# This closes the pre-existing 3/N gap that #8 worked around via the
+# zero-growth principle (#9). After this PR, the gap on develop is 0/N.
+
+
+@mcp.tool()
+def sbatch(
+    project: str,
+    command: str,
+    host: str | None = None,
+    partition: str | None = None,
+    cpus: int | None = None,
+    time: str | None = None,
+    mem: str | None = None,
+    nodelist: str | None = None,
+    account: str | None = None,
+    qos: str | None = None,
+    gpus: str | None = None,
+) -> dict:
+    """Alias of ``submit_sbatch`` whose MCP name matches the Python API.
+
+    Submit ``command`` as a batch job under ``project``. Returns
+    ``{"job_id": "<id>"}`` (or ``{"job_id": null}`` on submission failure).
+    """
+    from .._dispatch import sbatch as _sbatch
+
+    cfg = _make_config(
+        project, command, host, partition, cpus, time, mem, nodelist, account, qos, gpus
+    )
+    return {"job_id": _sbatch(cfg)}
+
+
+@mcp.tool()
+def srun(
+    project: str,
+    command: str,
+    host: str | None = None,
+    partition: str | None = None,
+    cpus: int | None = None,
+    time: str | None = None,
+    mem: str | None = None,
+    nodelist: str | None = None,
+    account: str | None = None,
+    qos: str | None = None,
+    gpus: str | None = None,
+) -> dict:
+    """Alias of ``dispatch_srun`` whose MCP name matches the Python API.
+
+    Run ``command`` synchronously inside an ``srun`` allocation under
+    ``project``. Returns ``{"returncode": <int>}``.
+    """
+    from .._dispatch import srun as _srun
+
+    cfg = _make_config(
+        project, command, host, partition, cpus, time, mem, nodelist, account, qos, gpus
+    )
+    return {"returncode": _srun(cfg)}
+
+
+@mcp.tool()
+def sync(project: str, host: str | None = None) -> dict:
+    """Alias of ``sync_project`` whose MCP name matches the Python API.
+
+    rsync the local ``project`` directory to ``$SCITEX_HPC_REMOTE_BASE/<project>``
+    on ``host``. Returns ``{"project": ..., "host": ...}``.
+    """
+    from .._sync import sync as _sync
+
+    cfg = _make_config(project=project, host=host)
+    _sync(cfg)
+    return {"project": project, "host": cfg.resolve("host")}
+
+
 @mcp.tool()
 def poll_job(job_id: str, host: str | None = None) -> dict:
     """Return ``sacct`` status for ``job_id``: ``state``, ``exit_code``, ``elapsed``."""

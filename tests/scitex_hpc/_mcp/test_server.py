@@ -103,3 +103,48 @@ def test_mcp_load_apptainer_tool_registered():
 
     # Assert
     assert "load_apptainer" in names
+
+
+def test_mcp_sbatch_alias_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "sbatch" in names
+
+
+def test_mcp_srun_alias_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "srun" in names
+
+
+def test_mcp_sync_alias_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "sync" in names
