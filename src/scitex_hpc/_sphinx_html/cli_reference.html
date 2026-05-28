@@ -408,37 +408,88 @@ the live click group via <a class="reference external" href="https://sphinx-clic
 <div class="line">Naming convention (use this for NAME — encodes the shape so any</div>
 <div class="line">operator can read it without re-discovering the allocation):</div>
 <div class="line-block">
-<div class="line">CPU-only : cpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram</div>
+<div class="line">CPU-only : &lt;cluster&gt;-cpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram</div>
 <div class="line-block">
-<div class="line">e.g. cpu-64-cores-256-ram</div>
+<div class="line">e.g. spartan-cpu-64-cores-256-ram</div>
 </div>
-<div class="line">GPU      : gpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram-&lt;vram_gb&gt;-vram</div>
+<div class="line">GPU      : &lt;cluster&gt;-gpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram-&lt;vram_gb&gt;-vram-&lt;gputype&gt;</div>
 <div class="line-block">
-<div class="line">e.g. gpu-16-cores-128-ram-80-vram   (1× H100, 80 GB)</div>
+<div class="line">e.g. spartan-gpu-16-cores-128-ram-80-vram-h100</div>
 <div class="line-block">
-<div class="line">gpu-32-cores-256-ram-40-vram   (1× A100-40, etc.)</div>
+<div class="line">spartan-gpu-8-cores-128-ram-80-vram-a100</div>
 </div>
 </div>
 </div>
-<div class="line">Suffix <cite>-NxTYPE</cite> if you book multiple GPUs (e.g. <cite>…-80-vram-4xh100</cite>).</div>
-<div class="line">Persistent reservations should also embed the cluster prefix</div>
-<div class="line">(<cite>spartan-cpu-64-cores-256-ram</cite>) so multi-cluster operators don’t</div>
-<div class="line">collide on the same lease id.</div>
+<div class="line">Suffix the GPU type at the end so similar-shape allocations on</div>
+<div class="line">different GPU classes don’t collide (always include it for GPU</div>
+<div class="line">reservations). For multiple GPUs, use <cite>-NxTYPE</cite> (e.g.</div>
+<div class="line"><cite>…-80-vram-4xh100</cite>). Always embed the cluster prefix so multi-</div>
+<div class="line">cluster operators don’t collide on the same lease id.</div>
 </div>
+<p>Verified-working examples on Spartan (account=punim2354):</p>
 <div class="line-block">
-<div class="line">Example:</div>
-<div class="line-block">
+<div class="line"># CPU — cascade partition (64 cores / 256 GB / 7 days)</div>
 <div class="line">$ scitex-hpc reservations book spartan-cpu-64-cores-256-ram </div>
 <div class="line-block">
-<div class="line">–host spartan –partition cascade </div>
+<div class="line">–partition cascade </div>
 <div class="line">–cpus 64 –mem 256G –time 7-0 </div>
-<div class="line">–account punim2354 –persistent</div>
+<div class="line">–account punim2354 –qos publiccpu –persistent</div>
 </div>
-<div class="line">$ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram </div>
+</div>
 <div class="line-block">
-<div class="line">–host spartan –partition gpu-h100 </div>
-<div class="line">–cpus 16 –mem 128G –gpus h100:1 –time 7-0 </div>
+<div class="line"># CPU — sapphire partition (64 cores / 128 GB / 7 days)</div>
+<div class="line">$ scitex-hpc reservations book spartan-cpu-64-cores-128-ram </div>
+<div class="line-block">
+<div class="line">–partition sapphire </div>
+<div class="line">–cpus 64 –mem 128G –time 7-0 </div>
+<div class="line">–account punim2354 –qos publiccpu –persistent</div>
+</div>
+</div>
+<div class="line-block">
+<div class="line"># GPU — 1× H100 (16 cores / 128 GB / 7 days)</div>
+<div class="line">$ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram-h100 </div>
+<div class="line-block">
+<div class="line">–partition gpu-h100 </div>
+<div class="line">–cpus 16 –mem 128G –gpus H100:1 –time 7-0 </div>
 <div class="line">–account punim2354 –qos feit –persistent</div>
+</div>
+</div>
+<div class="line-block">
+<div class="line"># GPU — 1× A100 (8 cores / 128 GB / 7 days)</div>
+<div class="line">$ scitex-hpc reservations book spartan-gpu-8-cores-128-ram-80-vram-a100 </div>
+<div class="line-block">
+<div class="line">–partition gpu-a100 </div>
+<div class="line">–cpus 8 –mem 128G –gpus A100:1 –time 7-0 </div>
+<div class="line">–account punim2354 –qos publicgpu –persistent</div>
+</div>
+</div>
+<div class="line-block">
+<div class="line">Spartan gotchas (learned the hard way):</div>
+<div class="line-block">
+<div class="line">* –gpus value is case-sensitive on Spartan: use UPPERCASE</div>
+<div class="line-block">
+<div class="line"><cite>H100:1</cite>, <cite>A100:1</cite> — lowercase fails with</div>
+<div class="line">“Requested node configuration is not available”.</div>
+</div>
+<div class="line">* Per-GPU caps on shared nodes:</div>
+<div class="line-block">
+<div class="line-block">
+<div class="line">- gpu-a100 nodes: 32 cores / 512 GB / 4 A100  → max 8 cores</div>
+<div class="line-block">
+<div class="line">and 128 GB per A100.</div>
+</div>
+<div class="line">- gpu-h100 nodes: 64 cores / 1 TB  / 4 H100   → max 16 cores</div>
+<div class="line-block">
+<div class="line">and ~256 GB per H100.</div>
+</div>
+</div>
+<div class="line">Asking above these caps for a 1-GPU job is rejected.</div>
+</div>
+<div class="line">* QOS by partition (account=punim2354):</div>
+<div class="line-block">
+<div class="line">- cascade / sapphire (CPU)  → –qos publiccpu</div>
+<div class="line">- gpu-a100                  → –qos publicgpu</div>
+<div class="line">- gpu-h100                  → –qos feit</div>
 </div>
 </div>
 </div>
