@@ -15,8 +15,8 @@
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
       <script src="_static/documentation_options.js?v=7f96dc5e"></script>
-      <script src="_static/doctools.js?v=fd6eb6e6"></script>
-      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+      <script src="_static/doctools.js?v=9bcbadda"></script>
+      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
       <script src="_static/clipboard.min.js?v=a7894cd8"></script>
       <script src="_static/copybutton.js?v=f281be69"></script>
     <script src="_static/js/theme.js"></script>
@@ -47,7 +47,38 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="api.html">API Reference</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">CLI Reference</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">CLI Reference</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#scitex-hpc">scitex-hpc</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-install-shell-completion">install-shell-completion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-list-python-apis">list-python-apis</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-mcp">mcp</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-mcp-doctor">doctor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-mcp-install">install</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-mcp-list-tools">list-tools</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-mcp-start">start</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-print-shell-completion">print-shell-completion</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-reservations">reservations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-attach">attach</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-book">book</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-cancel">cancel</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-exec">exec</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-get">get</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-list">list</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-reservations-refresh">refresh</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#scitex-hpc-skills">skills</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-skills-get">get</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-skills-install">install</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#scitex-hpc-skills-list">list</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -78,6 +109,748 @@
 <h1>CLI Reference<a class="headerlink" href="#cli-reference" title="Link to this heading"></a></h1>
 <p>The full <code class="docutils literal notranslate"><span class="pre">scitex-hpc</span></code> command-line surface is rendered directly from
 the live click group via <a class="reference external" href="https://sphinx-click.readthedocs.io/">sphinx-click</a>.</p>
+<section id="scitex-hpc">
+<h2>scitex-hpc<a class="headerlink" href="#scitex-hpc" title="Link to this heading"></a></h2>
+<p>scitex-hpc (v0.8.3) — scitex-hpc - Generic SLURM dispatch + persistent reservations.</p>
+<div class="line-block">
+<div class="line">Config is loaded with the SciTeX precedence chain:</div>
+<div class="line-block">
+<div class="line">config.yaml -&gt; $SCITEX_HPC_CONFIG -&gt; ~/.scitex/hpc/config.yaml -&gt; defaults</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-V">
+<span id="cmdoption-scitex-hpc-version"></span><span class="sig-name descname"><span class="pre">-V</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--version</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-V" title="Link to this definition"></a></dt>
+<dd><p>Show the version and exit.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-h">
+<span id="cmdoption-scitex-hpc-help"></span><span class="sig-name descname"><span class="pre">-h</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--help</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-h" title="Link to this definition"></a></dt>
+<dd><p>Show this message and exit.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-help-recursive">
+<span class="sig-name descname"><span class="pre">--help-recursive</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-help-recursive" title="Link to this definition"></a></dt>
+<dd><p>Show help for all commands recursively.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-json" title="Link to this definition"></a></dt>
+<dd><p>Emit structured JSON output (propagates to subcommands that honour it).</p>
+</dd></dl>
+
+<section id="scitex-hpc-install-shell-completion">
+<h3>install-shell-completion<a class="headerlink" href="#scitex-hpc-install-shell-completion" title="Link to this heading"></a></h3>
+<p>Wire up <code class="docutils literal notranslate"><span class="pre">&lt;TAB&gt;</span></code> completion in the user’s shell rc.</p>
+<div class="line-block">
+<div class="line">Examples:</div>
+<div class="line-block">
+<div class="line">scitex-hpc install-shell-completion              # → ~/.bashrc</div>
+<div class="line">scitex-hpc install-shell-completion –shell zsh  # → ~/.zshrc</div>
+<div class="line">scitex-hpc install-shell-completion –dry-run    # preview only</div>
+</div>
+</div>
+<div class="line-block">
+<div class="line">Activate in the current shell after install:</div>
+<div class="line-block">
+<div class="line">source ~/.bashrc</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>install-shell-completion<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-install-shell-completion-shell">
+<span class="sig-name descname"><span class="pre">--shell</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;shell&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-install-shell-completion-shell" title="Link to this definition"></a></dt>
+<dd><p>Target shell. Default: bash.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Options<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bash | zsh | fish</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-install-shell-completion-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-install-shell-completion-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Print the eval line and target rc file without writing.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-install-shell-completion-y">
+<span id="cmdoption-scitex-hpc-install-shell-completion-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-install-shell-completion-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-list-python-apis">
+<h3>list-python-apis<a class="headerlink" href="#scitex-hpc-list-python-apis" title="Link to this heading"></a></h3>
+<p>List public Python API symbols of scitex_hpc.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc list-python-apis</div>
+<div class="line">$ scitex-hpc list-python-apis –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>list-python-apis<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-list-python-apis-v">
+<span id="cmdoption-scitex-hpc-list-python-apis-verbose"></span><span class="sig-name descname"><span class="pre">-v</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--verbose</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-list-python-apis-v" title="Link to this definition"></a></dt>
+<dd><p>Verbosity (-v, -vv).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-list-python-apis-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-list-python-apis-json" title="Link to this definition"></a></dt>
+<dd><p>Output as JSON.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-mcp">
+<h3>mcp<a class="headerlink" href="#scitex-hpc-mcp" title="Link to this heading"></a></h3>
+<p>MCP (Model Context Protocol) server commands.</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>mcp<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<section id="scitex-hpc-mcp-doctor">
+<h4>doctor<a class="headerlink" href="#scitex-hpc-mcp-doctor" title="Link to this heading"></a></h4>
+<p>Check MCP server health and dependencies.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc mcp doctor</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>mcp<span class="w"> </span>doctor<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+</section>
+<section id="scitex-hpc-mcp-install">
+<h4>install<a class="headerlink" href="#scitex-hpc-mcp-install" title="Link to this heading"></a></h4>
+<p>Show MCP installation and configuration instructions.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc mcp install</div>
+<div class="line">$ scitex-hpc mcp install –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>mcp<span class="w"> </span>install<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-install-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-install-json" title="Link to this definition"></a></dt>
+<dd><p>Output as JSON.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-install-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-install-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Preview without writing anything.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-install-y">
+<span id="cmdoption-scitex-hpc-mcp-install-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-install-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-mcp-list-tools">
+<h4>list-tools<a class="headerlink" href="#scitex-hpc-mcp-list-tools" title="Link to this heading"></a></h4>
+<p>List MCP tools exposed by scitex-hpc.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc mcp list-tools</div>
+<div class="line">$ scitex-hpc mcp list-tools -vv</div>
+<div class="line">$ scitex-hpc mcp list-tools –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>mcp<span class="w"> </span>list-tools<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-list-tools-v">
+<span id="cmdoption-scitex-hpc-mcp-list-tools-verbose"></span><span class="sig-name descname"><span class="pre">-v</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--verbose</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-list-tools-v" title="Link to this definition"></a></dt>
+<dd><p>-v names, -vv params, -vvv docs.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-list-tools-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-list-tools-json" title="Link to this definition"></a></dt>
+<dd><p>Output as JSON.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-mcp-start">
+<h4>start<a class="headerlink" href="#scitex-hpc-mcp-start" title="Link to this heading"></a></h4>
+<p>Start the scitex-hpc MCP server (stdio transport).</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc mcp start</div>
+<div class="line">$ scitex-hpc mcp start –dry-run</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>mcp<span class="w"> </span>start<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-start-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-start-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Print launch plan without starting.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-mcp-start-y">
+<span id="cmdoption-scitex-hpc-mcp-start-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-mcp-start-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+</section>
+</section>
+<section id="scitex-hpc-print-shell-completion">
+<h3>print-shell-completion<a class="headerlink" href="#scitex-hpc-print-shell-completion" title="Link to this heading"></a></h3>
+<p>Print the click-generated completion script to stdout.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc print-shell-completion –shell bash</div>
+<div class="line">$ eval “$(scitex-hpc print-shell-completion –shell bash)”</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>print-shell-completion<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-print-shell-completion-shell">
+<span class="sig-name descname"><span class="pre">--shell</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;shell&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-print-shell-completion-shell" title="Link to this definition"></a></dt>
+<dd><p>Target shell. Default: bash.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Options<span class="colon">:</span></dt>
+<dd class="field-odd"><p>bash | zsh | fish</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations">
+<h3>reservations<a class="headerlink" href="#scitex-hpc-reservations" title="Link to this heading"></a></h3>
+<p>Persistent SLURM allocations (book once, exec many).</p>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<section id="scitex-hpc-reservations-attach">
+<h4>attach<a class="headerlink" href="#scitex-hpc-reservations-attach" title="Link to this heading"></a></h4>
+<p>Open an interactive shell on the reservation’s compute node.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations attach dev-pool</div>
+<div class="line">$ scitex-hpc reservations attach dev-pool –shell zsh</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>attach<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-attach-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-attach-host" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-attach-shell">
+<span class="sig-name descname"><span class="pre">--shell</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;shell&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-attach-shell" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-attach-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-attach-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-book">
+<h4>book<a class="headerlink" href="#scitex-hpc-reservations-book" title="Link to this heading"></a></h4>
+<p>Submit a hold-job and wait for SLURM allocation.</p>
+<div class="line-block">
+<div class="line">Naming convention (use this for NAME — encodes the shape so any</div>
+<div class="line">operator can read it without re-discovering the allocation):</div>
+<div class="line-block">
+<div class="line">CPU-only : cpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram</div>
+<div class="line-block">
+<div class="line">e.g. cpu-64-cores-256-ram</div>
+</div>
+<div class="line">GPU      : gpu-&lt;cores&gt;-cores-&lt;ram_gb&gt;-ram-&lt;vram_gb&gt;-vram</div>
+<div class="line-block">
+<div class="line">e.g. gpu-16-cores-128-ram-80-vram   (1× H100, 80 GB)</div>
+<div class="line-block">
+<div class="line">gpu-32-cores-256-ram-40-vram   (1× A100-40, etc.)</div>
+</div>
+</div>
+</div>
+<div class="line">Suffix <cite>-NxTYPE</cite> if you book multiple GPUs (e.g. <cite>…-80-vram-4xh100</cite>).</div>
+<div class="line">Persistent reservations should also embed the cluster prefix</div>
+<div class="line">(<cite>spartan-cpu-64-cores-256-ram</cite>) so multi-cluster operators don’t</div>
+<div class="line">collide on the same lease id.</div>
+</div>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations book spartan-cpu-64-cores-256-ram </div>
+<div class="line-block">
+<div class="line">–host spartan –partition cascade </div>
+<div class="line">–cpus 64 –mem 256G –time 7-0 </div>
+<div class="line">–account punim2354 –persistent</div>
+</div>
+<div class="line">$ scitex-hpc reservations book spartan-gpu-16-cores-128-ram-80-vram </div>
+<div class="line-block">
+<div class="line">–host spartan –partition gpu-h100 </div>
+<div class="line">–cpus 16 –mem 128G –gpus h100:1 –time 7-0 </div>
+<div class="line">–account punim2354 –qos feit –persistent</div>
+</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>book<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-host" title="Link to this definition"></a></dt>
+<dd><p>SSH host to submit sbatch from (e.g. spartan). Optional — falls back to $SCITEX_HPC_HOST or ~/.scitex/hpc/config.yaml’s <cite>host:</cite> if unset, so an operator with a single cluster doesn’t need to pass this every time.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-partition">
+<span class="sig-name descname"><span class="pre">--partition</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;partition&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-partition" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-cpus">
+<span class="sig-name descname"><span class="pre">--cpus</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;cpus&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-cpus" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-time">
+<span class="sig-name descname"><span class="pre">--time</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;time_&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-time" title="Link to this definition"></a></dt>
+<dd><p>walltime, e.g. 7-0 or 01:00:00</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-mem">
+<span class="sig-name descname"><span class="pre">--mem</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;mem&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-mem" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-nodelist">
+<span class="sig-name descname"><span class="pre">--nodelist</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;NODE&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-nodelist" title="Link to this definition"></a></dt>
+<dd><p>Pin the allocation to a specific node (e.g. spartan-bm198). SLURM will wait for the named node to free up rather than scheduling elsewhere.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-account">
+<span class="sig-name descname"><span class="pre">--account</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;account&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-account" title="Link to this definition"></a></dt>
+<dd><p>SLURM account / project to bill (e.g. punim2354).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-qos">
+<span class="sig-name descname"><span class="pre">--qos</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;qos&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-qos" title="Link to this definition"></a></dt>
+<dd><p>SLURM QOS tier (e.g. publiccpu).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-gpus">
+<span class="sig-name descname"><span class="pre">--gpus</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;SPEC&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-gpus" title="Link to this definition"></a></dt>
+<dd><p>Request GPUs. Pass-through to SLURM’s –gpus=&lt;SPEC&gt;. Examples: ‘1’ (any 1 GPU), ‘a100:2’ (two A100s), ‘h100:4’. Omit for CPU-only allocations.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-persistent">
+<span class="sig-name descname"><span class="pre">--persistent</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-persistent" title="Link to this definition"></a></dt>
+<dd><p>walltime auto-resubmit via SIGUSR1 (Phase 2).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-hold-body">
+<span class="sig-name descname"><span class="pre">--hold-body</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;hold_body&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-hold-body" title="Link to this definition"></a></dt>
+<dd><p>Custom sbatch script body (default: tail -f /dev/null).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-tmux-server">
+<span class="sig-name descname"><span class="pre">--tmux-server</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;SOCKET&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-tmux-server" title="Link to this definition"></a></dt>
+<dd><p>Bootstrap a long-lived tmux server with this socket name as the job’s PID 1. Required for scitex-agent-container’s slurm-tenant runtime. Example: –tmux-server sac</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-poll-timeout">
+<span class="sig-name descname"><span class="pre">--poll-timeout</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;poll_timeout&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-poll-timeout" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-poll-interval">
+<span class="sig-name descname"><span class="pre">--poll-interval</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;poll_interval&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-poll-interval" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Print plan without sbatch’ing.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-y">
+<span id="cmdoption-scitex-hpc-reservations-book-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-json" title="Link to this definition"></a></dt>
+<dd><p>Emit JSON output.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-book-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-book-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-cancel">
+<h4>cancel<a class="headerlink" href="#scitex-hpc-reservations-cancel" title="Link to this heading"></a></h4>
+<p>scancel + clear lease state for a reservation.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations cancel dev-pool</div>
+<div class="line">$ scitex-hpc reservations cancel dev-pool –no-missing-ok</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>cancel<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-cancel-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-cancel-host" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-cancel-missing-ok">
+<span id="cmdoption-scitex-hpc-reservations-cancel-no-missing-ok"></span><span class="sig-name descname"><span class="pre">--missing-ok</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--no-missing-ok</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-cancel-missing-ok" title="Link to this definition"></a></dt>
+<dd><p>Exit 0 if the lease is already gone (default).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-cancel-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-cancel-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Print plan without scancel’ing.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-cancel-y">
+<span id="cmdoption-scitex-hpc-reservations-cancel-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-cancel-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-cancel-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-cancel-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-exec">
+<h4>exec<a class="headerlink" href="#scitex-hpc-reservations-exec" title="Link to this heading"></a></h4>
+<p>Run a command inside the reservation’s allocation.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations exec dev-pool ‘hostname’</div>
+<div class="line">$ scitex-hpc reservations exec dev-pool ‘python -m pytest’</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span><span class="nb">exec</span><span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME<span class="w"> </span>COMMAND
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-exec-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-exec-host" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-exec-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-exec-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Print plan without ssh-execing.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-exec-y">
+<span id="cmdoption-scitex-hpc-reservations-exec-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-exec-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-exec-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-exec-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-exec-arg-COMMAND">
+<span class="sig-name descname"><span class="pre">COMMAND</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-exec-arg-COMMAND" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-get">
+<h4>get<a class="headerlink" href="#scitex-hpc-reservations-get" title="Link to this heading"></a></h4>
+<p>Show one reservation as JSON.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations get dev-pool</div>
+<div class="line">$ scitex-hpc reservations get dev-pool –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>get<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-get-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-get-host" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-get-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-get-json" title="Link to this definition"></a></dt>
+<dd><p>Emit JSON output.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-get-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-get-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-list">
+<h4>list<a class="headerlink" href="#scitex-hpc-reservations-list" title="Link to this heading"></a></h4>
+<p>List active reservations.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations list</div>
+<div class="line">$ scitex-hpc reservations list –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>list<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-list-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-list-json" title="Link to this definition"></a></dt>
+<dd><p>Emit JSON output.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-reservations-refresh">
+<h4>refresh<a class="headerlink" href="#scitex-hpc-reservations-refresh" title="Link to this heading"></a></h4>
+<p>Re-discover the current job_id via squeue (after walltime auto-resubmit).</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc reservations refresh dev-pool</div>
+<div class="line">$ scitex-hpc reservations refresh dev-pool –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>reservations<span class="w"> </span>refresh<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-refresh-host">
+<span class="sig-name descname"><span class="pre">--host</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;host&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-refresh-host" title="Link to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-refresh-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-refresh-json" title="Link to this definition"></a></dt>
+<dd><p>Emit JSON output.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-reservations-refresh-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-reservations-refresh-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+</section>
+<section id="scitex-hpc-skills">
+<h3>skills<a class="headerlink" href="#scitex-hpc-skills" title="Link to this heading"></a></h3>
+<p>Agent-facing skills bundled with scitex-hpc.</p>
+<div class="line-block">
+<div class="line">Examples:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc skills list</div>
+<div class="line">$ scitex-hpc skills get 01_installation</div>
+<div class="line">$ scitex-hpc skills install                  # → ~/.scitex/dev/skills/scitex-hpc/</div>
+<div class="line">$ scitex-hpc skills install –claude-symlink # also expose to ~/.claude/skills/scitex/</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>skills<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>COMMAND<span class="w"> </span><span class="o">[</span>ARGS<span class="o">]</span>...
+</pre></div>
+</div>
+<section id="scitex-hpc-skills-get">
+<h4>get<a class="headerlink" href="#scitex-hpc-skills-get" title="Link to this heading"></a></h4>
+<p>Print the contents of a skill file by NAME (e.g. <code class="docutils literal notranslate"><span class="pre">01_installation</span></code>).</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc skills get 01_installation</div>
+<div class="line">$ scitex-hpc skills get 02_quick-start –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>skills<span class="w"> </span>get<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span><span class="w"> </span>NAME
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-get-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-get-json" title="Link to this definition"></a></dt>
+<dd><p>Emit machine-readable JSON.</p>
+</dd></dl>
+
+<p class="rubric">Arguments</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-get-arg-NAME">
+<span class="sig-name descname"><span class="pre">NAME</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-get-arg-NAME" title="Link to this definition"></a></dt>
+<dd><p>Required argument</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-skills-install">
+<h4>install<a class="headerlink" href="#scitex-hpc-skills-install" title="Link to this heading"></a></h4>
+<p>Install this package’s skills into a target directory.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc skills install</div>
+<div class="line">$ scitex-hpc skills install –claude-symlink</div>
+<div class="line">$ scitex-hpc skills install –no-link –dest /tmp/scitex-hpc-skills</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>skills<span class="w"> </span>install<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-install-dest">
+<span class="sig-name descname"><span class="pre">--dest</span></span><span class="sig-prename descclassname"> <span class="pre">&lt;dest&gt;</span></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-install-dest" title="Link to this definition"></a></dt>
+<dd><p>Destination dir (default: ~/.scitex/dev/skills/scitex-hpc/).</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-install-no-link">
+<span class="sig-name descname"><span class="pre">--no-link</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-install-no-link" title="Link to this definition"></a></dt>
+<dd><p>Copy files instead of symlinking. Default is symlink.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-install-claude-symlink">
+<span class="sig-name descname"><span class="pre">--claude-symlink</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-install-claude-symlink" title="Link to this definition"></a></dt>
+<dd><p>Also expose at ~/.claude/skills/scitex/ for Claude Code consumers.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-install-dry-run">
+<span class="sig-name descname"><span class="pre">--dry-run</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-install-dry-run" title="Link to this definition"></a></dt>
+<dd><p>Preview without copying/linking.</p>
+</dd></dl>
+
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-install-y">
+<span id="cmdoption-scitex-hpc-skills-install-yes"></span><span class="sig-name descname"><span class="pre">-y</span></span><span class="sig-prename descclassname"></span><span class="sig-prename descclassname"><span class="pre">,</span> </span><span class="sig-name descname"><span class="pre">--yes</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-install-y" title="Link to this definition"></a></dt>
+<dd><p>Skip confirmation prompt.</p>
+</dd></dl>
+
+</section>
+<section id="scitex-hpc-skills-list">
+<h4>list<a class="headerlink" href="#scitex-hpc-skills-list" title="Link to this heading"></a></h4>
+<p>List skill files bundled with this package.</p>
+<div class="line-block">
+<div class="line">Example:</div>
+<div class="line-block">
+<div class="line">$ scitex-hpc skills list</div>
+<div class="line">$ scitex-hpc skills list –json</div>
+</div>
+</div>
+<p class="rubric">Usage</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>scitex-hpc<span class="w"> </span>skills<span class="w"> </span>list<span class="w"> </span><span class="o">[</span>OPTIONS<span class="o">]</span>
+</pre></div>
+</div>
+<p class="rubric">Options</p>
+<dl class="std option">
+<dt class="sig sig-object std" id="cmdoption-scitex-hpc-skills-list-json">
+<span class="sig-name descname"><span class="pre">--json</span></span><span class="sig-prename descclassname"></span><a class="headerlink" href="#cmdoption-scitex-hpc-skills-list-json" title="Link to this definition"></a></dt>
+<dd><p>Emit machine-readable JSON.</p>
+</dd></dl>
+
+</section>
+</section>
+</section>
 </section>
 
 
