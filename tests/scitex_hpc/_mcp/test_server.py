@@ -58,3 +58,48 @@ def test_mcp_skills_get_tool_registered():
 
     # Assert
     assert "skills_get" in names or "hpc_skills_get" in names
+
+
+def test_mcp_detect_module_system_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "detect_module_system" in names
+
+
+def test_mcp_module_load_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "module_load" in names
+
+
+def test_mcp_load_apptainer_tool_registered():
+    # Arrange
+    pytest.importorskip("fastmcp")
+    import asyncio
+
+    from scitex_hpc._mcp.server import mcp
+
+    # Act
+    tools = asyncio.run(mcp.list_tools())
+    names = {getattr(t, "name", None) for t in tools}
+
+    # Assert
+    assert "load_apptainer" in names
